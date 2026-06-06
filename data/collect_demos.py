@@ -6,6 +6,7 @@ Saves clean and contaminated (early gripper release) demos to HDF5.
 import sys, os
 sys.path.insert(0, '/home/user/LIBERO')
 os.environ.setdefault('MUJOCO_GL', 'osmesa')
+os.environ.setdefault('PYOPENGL_PLATFORM', 'osmesa')
 
 import argparse
 import h5py
@@ -246,14 +247,29 @@ def main():
         clean_eps.append((obs_d, acts, rews, suc))
         print(f"  [{i+1}/{n_clean}] steps={len(acts)}, success={suc}")
 
-    print(f"\nCollecting {n_cont} contaminated demos (early release at {release_frac:.0%} of lift)...")
+    # Contaminated set: 25% clean (n_cont_clean) + 75% defective.
+    # This matches the task spec: "25% scripted success" in the contaminated set.
+    n_cont_clean   = max(1, round(n_cont * 0.25))  # 5 out of 20
+    n_cont_defect  = n_cont - n_cont_clean          # 15 out of 20
+
+    print(f"\nCollecting {n_cont} contaminated demos "
+          f"({n_cont_clean} clean + {n_cont_defect} defective, "
+          f"early release at {release_frac:.0%} of lift)...")
     cont_eps = []
-    for i in range(n_cont):
+    # Clean portion of contaminated set (seeds offset to avoid overlap with clean set)
+    for i in range(n_cont_clean):
+        obs_d, acts, rews, suc = collect_episode(env, inject_defect=False,
+                                                  horizon=horizon, seed=2000+i)
+        cont_eps.append((obs_d, acts, rews, suc))
+        print(f"  [{i+1}/{n_cont}] steps={len(acts)}, success={suc}  [clean]")
+    # Defective portion
+    for i in range(n_cont_defect):
         obs_d, acts, rews, suc = collect_episode(
-            env, inject_defect=True, release_frac=release_frac, horizon=horizon, seed=1000+i
+            env, inject_defect=True, release_frac=release_frac,
+            horizon=horizon, seed=1000+i,
         )
         cont_eps.append((obs_d, acts, rews, suc))
-        print(f"  [{i+1}/{n_cont}] steps={len(acts)}, success={suc}")
+        print(f"  [{n_cont_clean+i+1}/{n_cont}] steps={len(acts)}, success={suc}  [defect]")
 
     env.close()
 

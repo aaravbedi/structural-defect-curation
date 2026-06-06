@@ -69,6 +69,10 @@ def load_dataset(hdf5_path):
 
 
 def train(hdf5_path, save_path, cfg, device='cpu'):
+    seed = cfg.get('seed', 42)
+    torch.manual_seed(seed)
+    np.random.seed(seed)
+
     obs_data, act_data = load_dataset(hdf5_path)
     print(f"Dataset: {len(obs_data)} transitions from {hdf5_path}")
 
@@ -86,7 +90,7 @@ def train(hdf5_path, save_path, cfg, device='cpu'):
     in_dim = obs_data.shape[1]
     act_dim = act_data.shape[1]
     model = BCPolicy(in_dim, act_dim, hidden_dims=cfg['hidden_dims']).to(device)
-    optimizer = torch.optim.Adam(model.parameters(), lr=cfg['lr'])
+    optimizer = torch.optim.Adam(model.parameters(), lr=float(cfg['lr']))
 
     best_loss = float('inf')
     for epoch in range(cfg['n_epochs']):
