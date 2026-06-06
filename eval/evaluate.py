@@ -1,0 +1,76 @@
+"""
+Evaluate a trained BC policy on the LIBERO environment.
+Reports task success rate over N rollouts.
+"""
+
+import sys, os
+sys.path.insert(0, '/home/user/LIBERO')
+sys.path.insert(0, '/home/user/structural-defect-curation')
+os.environ.setdefault('MUJOCO_GL', 'osmesa')
+
+import argparse
+import numpy as np
+import torch
+import yaml
+
+from libero.libero.benchmark import get_benchmark
+from libero.libero.envs import OffScreenRenderEnv
+from methods.bc_policy import load_policy, obs_to_vec, OBS_KEYS
+
+
+def run_rollout(env, model, obs_mean, obs_std, horizon=500, device='cpu'):
+    obs = env.reset()
+    success = False
+    for _ in range(horizon):
+        obs_vec = obs_to_vec({k: obs[k] for k in OBS_KEYS})
+        obs_norm = (obs_vec - obs_mean) / obs_std
+        action = model.predict(obs_norm, device=device)
+        obs, reward, done, _ = env.step(action)
+        if done:
+            success = True
+            break
+    return success
+
+
+def evaluate(policy_path, cfg, device='cpu', label=''):
+    model, obs_mean, obs_std = load_policy(policy_path, device=device)
+
+    benchmark_name = cfg['env']['benchmark']
+    task_idx = cfg['env']['task_idx']
+    n_rollouts = cfg['eval']['n_rollouts']
+    horizon    = cfg['eval']['horizon']
+
+    bm = get_benchmark(benchmark_name)(task_order_index=0)
+    task_bddl = bm.get_task_bddl_file_path(task_idx)
+    env = OffScreenRenderEnv(
+        bddl_file_name=task_bddl,
+        camera_heights=cfg['env']['camera_heights'],
+        camera_widths=cfg['env']['camera_widths'],
+        has_offscreen_renderer=False,
+        use_camera_obs=False,
+    )
+
+    successes = []
+    for i in range(n_rollouts):
+        s = run_rollout(env, model, obs_mean, obs_std, horizon=horizon, device=device)
+        successes.append(s)
+        print(f"  [{i+1}/{n_rollouts}] success={s}")
+
+    env.close()
+    rate = np.mean(successes)
+    print(f"\n{label} Success rate: {rate:.1%} ({sum(successes)}/{n_rollouts})")
+    return rate
+
+
+if __name__ == '__main__':
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--config', default='configs/libero_spatial.yaml')
+    parser.add_argument('--policy', required=True)
+    parser.add_argument('--label', default='')
+    args = parser.parse_args()
+
+    with open(args.config) as f:
+        cfg = yaml.safe_load(f)
+
+    device = 'cuda' if torch.cuda.is_available() else 'cpu'
+    evaluate(args.policy, cfg, device=device, label=args.label)
