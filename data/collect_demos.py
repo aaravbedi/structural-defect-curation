@@ -1,5 +1,8 @@
 """
-Collect demonstrations for libero_spatial task 0 using a scripted pick-and-place policy.
+Collect demonstrations for libero_spatial task 0 using a Markovian pick-and-place policy.
+Each action depends only on the current obs + init_bowl_pos (a per-episode constant),
+so the demonstrations are fully Markovian and suitable for behavior cloning.
+
 Saves clean and contaminated (early gripper release) demos to HDF5.
 """
 
@@ -16,9 +19,11 @@ from libero.libero.benchmark import get_benchmark
 from libero.libero.envs import OffScreenRenderEnv
 
 
-OBS_KEYS = [
+# OBS_KEYS read from the environment at each step.
+# 'init_bowl_pos' is NOT an env key — it is stored separately as a per-episode constant.
+# eef_quat excluded: constant orientation → near-zero std → normalization explosions in BC.
+ENV_OBS_KEYS = [
     'robot0_eef_pos',
-    'robot0_eef_quat',
     'robot0_gripper_qpos',
     'akita_black_bowl_1_pos',
     'akita_black_bowl_1_to_robot0_eef_pos',
@@ -26,122 +31,93 @@ OBS_KEYS = [
     'plate_1_to_robot0_eef_pos',
 ]
 
-# Phases of the pick-and-place scripted policy.
-# Uses an "up → over → down" trajectory to avoid knocking objects.
-PHASE_RISE       = 0  # first move straight up to safe clear height
-PHASE_PREGRASP   = 1  # move horizontally over bowl (staying high)
-PHASE_DESCEND    = 2  # lower straight down to grasp height
-PHASE_GRASP      = 3  # hold still and close gripper
-PHASE_LIFT       = 4  # lift straight back up
-PHASE_TRANSPORT  = 5  # move horizontally over plate
-PHASE_LOWER      = 6  # lower to plate
-PHASE_RELEASE    = 7  # open gripper
-PHASE_DONE       = 8
+# All keys stored in HDF5 (includes the synthetic init_bowl_pos constant).
+ALL_OBS_KEYS = ENV_OBS_KEYS + ['init_bowl_pos']
 
-SAFE_Z       = 1.20   # safe transit height above all objects (world frame)
-GRASP_DZ     = 0.01   # descend to bowl_z + this before grasping
-PLACE_DZ     = 0.06   # place bowl at plate_z + this
+SAFE_Z    = 1.20   # safe transit height (world frame)
+GRASP_DZ  = 0.022  # descend to bowl_z + GRASP_DZ; bowl contact stops EEF ~2cm above center
+PLACE_DZ  = 0.06   # place bowl at plate_z + PLACE_DZ
 
 
-def scripted_policy(obs, phase, phase_step, init_bowl_pos, init_plate_pos,
-                    inject_defect=False, release_frac=0.3):
+def markovian_policy(obs, init_bowl_pos, init_plate_pos,
+                     inject_defect=False, release_frac=0.3):
     """
-    Returns (action, next_phase, next_phase_step).
+    Fully Markovian pick-and-place policy.
+
+    Phase is inferred from current obs + fixed per-episode constants.
+    No internal phase counter needed, so demonstrations are i.i.d. in obs→action.
+
     action: [dx, dy, dz, dax, day, daz, gripper]  (OSC_POSE)
       gripper: +1 = open, -1 = close
-
-    Uses init_bowl_pos / init_plate_pos to avoid chasing a displaced object.
     """
-    eef  = obs['robot0_eef_pos']
-    bowl = init_bowl_pos
-    plate = init_plate_pos
+    eef         = obs['robot0_eef_pos']
+    bowl_live   = obs['akita_black_bowl_1_pos']
+    bowl_to_eef = obs['akita_black_bowl_1_to_robot0_eef_pos']  # eef_pos - bowl_pos
+    gripper_q   = obs['robot0_gripper_qpos']
 
-    gain = 3.0            # P-gain; 1.0 action ≈ 10mm/step → gain=3 saturates at ~33mm err
-    rot  = np.zeros(3)
-    GO   = +1.0           # gripper open
-    GC   = -1.0           # gripper closed
-    XY_TOL  = 0.015       # 1.5 cm horizontal tolerance
-    Z_TOL   = 0.010       # 1.0 cm vertical tolerance
+    gain    = 3.0
+    rot     = np.zeros(3)
+    GO      = +1.0   # gripper open
+    GC      = -1.0   # gripper close
+    XY_TOL  = 0.015
+    Z_TOL   = 0.010
 
-    def action_to(target, gp, xy_only=False):
-        delta = target - eef
-        if xy_only:
-            delta[2] = 0.0
+    # Gripper is "closed" when fingers have moved from the open rest position.
+    # robot0_gripper_qpos for Panda: open ≈ 0.0005, closed ≈ 0.031 (qpos grows when closing)
+    GRIP_CLOSE_Q = 0.020   # above this → gripper is closing / closed
+
+    # Bowl is considered held when gripper is closed AND bowl is near EEF.
+    grip_closing = gripper_q[0] > GRIP_CLOSE_Q
+    bowl_dist    = np.linalg.norm(bowl_to_eef)
+    HOLD_DIST    = 0.06    # when bowl is grasped, bowl-to-eef is this small
+    bowl_held    = grip_closing and bowl_dist < HOLD_DIST
+
+    def act_to(target, gp):
+        delta = np.asarray(target, dtype=float) - eef
         return np.concatenate([np.clip(gain * delta, -1, 1), rot, [gp]])
 
-    def xy_err(target):
-        return np.linalg.norm(eef[:2] - target[:2])
+    def xy_err(p, q):
+        return np.linalg.norm(np.asarray(p[:2]) - np.asarray(q[:2]))
 
-    def z_err(target_z):
-        return abs(eef[2] - target_z)
+    grasp_z = init_bowl_pos[2] + GRASP_DZ
+    place_z = init_plate_pos[2] + PLACE_DZ
 
-    if phase == PHASE_RISE:
-        # Move straight up to safe transit height
-        target = np.array([eef[0], eef[1], SAFE_Z])
-        if z_err(SAFE_Z) < Z_TOL:
-            return action_to(target, GO), PHASE_PREGRASP, 0
-        return action_to(target, GO), PHASE_RISE, phase_step + 1
+    if not bowl_held:
+        # ── Phase 1: approach and grasp ──────────────────────────────────────
+        if xy_err(eef, init_bowl_pos) > XY_TOL:
+            # Not yet over bowl: move toward [bowl_xy, SAFE_Z].
+            # This subsumes RISE + PREGRASP — no oscillation between them.
+            return act_to([init_bowl_pos[0], init_bowl_pos[1], SAFE_Z], GO)
 
-    elif phase == PHASE_PREGRASP:
-        # Move horizontally to above the bowl
-        target = np.array([bowl[0], bowl[1], SAFE_Z])
-        if xy_err(target) < XY_TOL:
-            return action_to(target, GO), PHASE_DESCEND, 0
-        return action_to(target, GO), PHASE_PREGRASP, phase_step + 1
+        elif eef[2] > grasp_z + Z_TOL:
+            # Directly above bowl: DESCEND straight down
+            return act_to([init_bowl_pos[0], init_bowl_pos[1], grasp_z], GO)
 
-    elif phase == PHASE_DESCEND:
-        # Lower straight down to grasp height
-        grasp_z = bowl[2] + GRASP_DZ
-        target = np.array([bowl[0], bowl[1], grasp_z])
-        if z_err(grasp_z) < Z_TOL or phase_step >= 50:
-            return action_to(target, GO), PHASE_GRASP, 0
-        return action_to(target, GO), PHASE_DESCEND, phase_step + 1
-
-    elif phase == PHASE_GRASP:
-        # Hold position, close gripper
-        grasp_z = bowl[2] + GRASP_DZ
-        target = np.array([bowl[0], bowl[1], grasp_z])
-        if phase_step >= 20:
-            return action_to(target, GC), PHASE_LIFT, 0
-        return action_to(target, GC), PHASE_GRASP, phase_step + 1
-
-    elif phase == PHASE_LIFT:
-        # Lift straight up to safe height
-        target = np.array([bowl[0], bowl[1], SAFE_Z])
-        if inject_defect:
-            lift_steps = 25
-            release_step = int(release_frac * lift_steps)
-            gp = GO if phase_step >= release_step else GC
         else:
-            gp = GC
-        if z_err(SAFE_Z) < Z_TOL or phase_step >= 40:
-            return action_to(target, GC), PHASE_TRANSPORT, 0
-        return action_to(target, gp), PHASE_LIFT, phase_step + 1
+            # At grasp height: close gripper
+            return act_to([init_bowl_pos[0], init_bowl_pos[1], grasp_z], GC)
 
-    elif phase == PHASE_TRANSPORT:
-        # Move horizontally over plate at safe height
-        target = np.array([plate[0], plate[1], SAFE_Z])
-        if xy_err(target) < XY_TOL:
-            return action_to(target, GC), PHASE_LOWER, 0
-        return action_to(target, GC), PHASE_TRANSPORT, phase_step + 1
+    else:
+        # ── Phase 2: lift and place ───────────────────────────────────────────
+        # Defect: release_z is a fixed height computed from init_bowl_pos.
+        if inject_defect:
+            release_z = init_bowl_pos[2] + release_frac * (SAFE_Z - init_bowl_pos[2])
+            lift_grip = GO if eef[2] > release_z else GC
+        else:
+            lift_grip = GC
 
-    elif phase == PHASE_LOWER:
-        # Lower onto plate
-        target = np.array([plate[0], plate[1], plate[2] + PLACE_DZ])
-        if z_err(plate[2] + PLACE_DZ) < Z_TOL or phase_step >= 50:
-            return action_to(target, GC), PHASE_RELEASE, 0
-        return action_to(target, GC), PHASE_LOWER, phase_step + 1
+        if xy_err(eef, init_plate_pos) > XY_TOL:
+            # Not yet over plate: move toward [plate_xy, SAFE_Z].
+            # This subsumes LIFT + TRANSPORT — no oscillation between them.
+            return act_to([init_plate_pos[0], init_plate_pos[1], SAFE_Z], lift_grip)
 
-    elif phase == PHASE_RELEASE:
-        target = np.array([plate[0], plate[1], plate[2] + PLACE_DZ])
-        if phase_step >= 15:
-            return action_to(target, GO), PHASE_DONE, 0
-        return action_to(target, GO), PHASE_RELEASE, phase_step + 1
+        elif eef[2] > place_z + Z_TOL:
+            # Directly above plate: LOWER straight down
+            return act_to([init_plate_pos[0], init_plate_pos[1], place_z], GC)
 
-    else:  # DONE
-        action = np.zeros(7)
-        action[-1] = GO
-        return action, PHASE_DONE, phase_step + 1
+        else:
+            # At place height: open gripper to release bowl
+            return act_to([init_plate_pos[0], init_plate_pos[1], place_z], GO)
 
 
 def collect_episode(env, inject_defect=False, release_frac=0.3, horizon=500, seed=None):
@@ -150,41 +126,34 @@ def collect_episode(env, inject_defect=False, release_frac=0.3, horizon=500, see
         np.random.seed(seed)
     obs = env.reset()
 
-    # Let physics settle for 30 steps before snapshotting object positions.
-    # Without this, the bowl/objects may drift from arm-body intersection artifacts.
-    settle_action = np.zeros(7); settle_action[-1] = 1.0  # open gripper, stay still
+    # 30-step settle: gripper open, arm still. Resolves physics init artifacts.
+    settle_action = np.zeros(7)
+    settle_action[-1] = 1.0
     for _ in range(30):
         obs, _, _, _ = env.step(settle_action)
 
-    # Snapshot positions after settling
     init_bowl_pos  = obs['akita_black_bowl_1_pos'].copy()
     init_plate_pos = obs['plate_1_pos'].copy()
 
-    obs_list = {k: [] for k in OBS_KEYS}
+    obs_list = {k: [] for k in ALL_OBS_KEYS}
     actions = []
     rewards = []
-
-    phase = PHASE_RISE
-    phase_step = 0
     success = False
 
     for t in range(horizon):
-        action, next_phase, next_step = scripted_policy(
-            obs, phase, phase_step,
-            init_bowl_pos=init_bowl_pos,
-            init_plate_pos=init_plate_pos,
+        action = markovian_policy(
+            obs, init_bowl_pos, init_plate_pos,
             inject_defect=inject_defect,
             release_frac=release_frac,
         )
-        for k in OBS_KEYS:
+
+        for k in ENV_OBS_KEYS:
             obs_list[k].append(obs[k].copy())
+        obs_list['init_bowl_pos'].append(init_bowl_pos.copy())  # constant per episode
         actions.append(action.copy())
 
         obs, reward, done, _ = env.step(action)
         rewards.append(reward)
-
-        phase = next_phase
-        phase_step = next_step
 
         if done:
             success = True
@@ -195,7 +164,6 @@ def collect_episode(env, inject_defect=False, release_frac=0.3, horizon=500, see
 
 
 def save_demos(filepath, episodes):
-    """Save episodes to HDF5 file."""
     os.makedirs(os.path.dirname(filepath), exist_ok=True)
     with h5py.File(filepath, 'w') as f:
         for i, (obs_dict, actions, rewards, success) in enumerate(episodes):
@@ -220,11 +188,11 @@ def main():
     with open(args.config) as f:
         cfg = yaml.safe_load(f)
 
-    n_clean = args.n_clean or cfg['demo']['n_clean']
-    n_cont  = args.n_contaminated or cfg['demo']['n_contaminated']
+    n_clean      = args.n_clean or cfg['demo']['n_clean']
+    n_cont       = args.n_contaminated or cfg['demo']['n_contaminated']
     release_frac = cfg['demo']['release_fraction']
-    horizon = cfg['env']['horizon']
-    task_idx = cfg['env']['task_idx']
+    horizon      = cfg['env']['horizon']
+    task_idx     = cfg['env']['task_idx']
     benchmark_name = cfg['env']['benchmark']
 
     print(f"Setting up LIBERO {benchmark_name} task {task_idx}...")
@@ -235,36 +203,39 @@ def main():
         bddl_file_name=task_bddl,
         camera_heights=cfg['env']['camera_heights'],
         camera_widths=cfg['env']['camera_widths'],
-        has_offscreen_renderer=False,  # no rendering needed for state-based BC
+        has_offscreen_renderer=False,
         use_camera_obs=False,
     )
 
     print(f"\nCollecting {n_clean} clean demos...")
     clean_eps = []
     for i in range(n_clean):
-        obs_d, acts, rews, suc = collect_episode(env, inject_defect=False, horizon=horizon, seed=i)
+        obs_d, acts, rews, suc = collect_episode(
+            env, inject_defect=False, horizon=horizon, seed=i)
         clean_eps.append((obs_d, acts, rews, suc))
         print(f"  [{i+1}/{n_clean}] steps={len(acts)}, success={suc}")
 
-    print(f"\nCollecting {n_cont} contaminated demos (early release at {release_frac:.0%} of lift)...")
+    print(f"\nCollecting {n_cont} contaminated demos "
+          f"(early release at {release_frac:.0%} of lift)...")
     cont_eps = []
     for i in range(n_cont):
         obs_d, acts, rews, suc = collect_episode(
-            env, inject_defect=True, release_frac=release_frac, horizon=horizon, seed=1000+i
-        )
+            env, inject_defect=True, release_frac=release_frac,
+            horizon=horizon, seed=1000 + i)
         cont_eps.append((obs_d, acts, rews, suc))
         print(f"  [{i+1}/{n_cont}] steps={len(acts)}, success={suc}")
 
     env.close()
 
     clean_success = sum(e[3] for e in clean_eps) / len(clean_eps)
-    cont_success  = sum(e[3] for e in cont_eps)  / len(cont_eps)
+    cont_success  = sum(e[3] for e in cont_eps) / len(cont_eps)
     print(f"\nScripted policy success rates:")
     print(f"  Clean:        {clean_success:.1%} ({sum(e[3] for e in clean_eps)}/{n_clean})")
     print(f"  Contaminated: {cont_success:.1%} ({sum(e[3] for e in cont_eps)}/{n_cont})")
 
-    save_demos(os.path.join(args.out_dir, 'clean_demos.hdf5'), clean_eps)
-    save_demos(os.path.join(args.out_dir, 'contaminated_demos.hdf5'), cont_eps)
+    out_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), args.out_dir)
+    save_demos(os.path.join(out_dir, 'clean_demos.hdf5'), clean_eps)
+    save_demos(os.path.join(out_dir, 'contaminated_demos.hdf5'), cont_eps)
 
 
 if __name__ == '__main__':

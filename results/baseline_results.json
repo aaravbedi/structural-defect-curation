@@ -1,0 +1,33 @@
+{
+  "config": "configs/libero_spatial.yaml",
+  "task": "libero_spatial/task_0 (pick_up_the_black_bowl_and_place_it_on_the_plate)",
+  "defect_type": "early_release",
+  "release_fraction": 0.3,
+  "scripted_policy": {
+    "clean_success_rate": 0.90,
+    "contaminated_success_rate": 0.25,
+    "n_clean_demos": 20,
+    "n_contaminated_demos": 20
+  },
+  "bc_policy": {
+    "obs_dim": 26,
+    "action_dim": 7,
+    "hidden_dims": [256, 256],
+    "n_epochs": 300,
+    "phase_conditioning": true,
+    "clean": {
+      "n_rollouts": 10,
+      "successes": 6,
+      "success_rate": 0.60,
+      "training_demos_used": "18/20 (success_only=True)"
+    },
+    "contaminated": {
+      "n_rollouts": 10,
+      "successes": 2,
+      "success_rate": 0.20,
+      "training_demos_used": "20/20 (success_only=False)"
+    },
+    "gap": 0.40
+  },
+  "notes": "Phase conditioning (6-dim one-hot) added to 20-dim obs vector to eliminate BC mode averaging across task phases. eef_quat excluded (std~0.00008 causes normalization explosion). init_bowl_pos captured after 30-step settle as per-episode constant."
+}

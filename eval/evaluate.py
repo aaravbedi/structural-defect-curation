@@ -15,16 +15,32 @@ import yaml
 
 from libero.libero.benchmark import get_benchmark
 from libero.libero.envs import OffScreenRenderEnv
-from methods.bc_policy import load_policy, obs_to_vec, OBS_KEYS
+from methods.bc_policy import load_policy, build_obs_vec, OBS_KEYS
 
 
 def run_rollout(env, model, obs_mean, obs_std, horizon=500, device='cpu'):
     obs = env.reset()
+
+    # Match the 30-step settle used during demo collection.
+    settle = np.zeros(7); settle[-1] = 1.0
+    for _ in range(30):
+        obs, _, _, _ = env.step(settle)
+
+    # Capture per-episode constants (same as collect_demos.py).
+    init_bowl_pos  = obs['akita_black_bowl_1_pos'].copy()
+    init_plate_pos = obs['plate_1_pos'].copy()
+
     success = False
     for _ in range(horizon):
-        obs_vec = obs_to_vec({k: obs[k] for k in OBS_KEYS})
+        # Build obs dict with the synthetic 'init_bowl_pos' constant.
+        obs_dict = {k: obs[k] for k in OBS_KEYS if k != 'init_bowl_pos'}
+        obs_dict['init_bowl_pos'] = init_bowl_pos
+
+        # Full obs vector: base features + phase one-hot.
+        obs_vec  = build_obs_vec(obs_dict, init_bowl_pos, init_plate_pos)
         obs_norm = (obs_vec - obs_mean) / obs_std
-        action = model.predict(obs_norm, device=device)
+        action   = model.predict(obs_norm, device=device)
+
         obs, reward, done, _ = env.step(action)
         if done:
             success = True
@@ -36,7 +52,7 @@ def evaluate(policy_path, cfg, device='cpu', label=''):
     model, obs_mean, obs_std = load_policy(policy_path, device=device)
 
     benchmark_name = cfg['env']['benchmark']
-    task_idx = cfg['env']['task_idx']
+    task_idx   = cfg['env']['task_idx']
     n_rollouts = cfg['eval']['n_rollouts']
     horizon    = cfg['eval']['horizon']
 

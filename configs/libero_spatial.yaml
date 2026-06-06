@@ -16,17 +16,17 @@ demo:
 train:
   obs_keys:
     - robot0_eef_pos
-    - robot0_eef_quat
     - robot0_gripper_qpos
     - akita_black_bowl_1_pos
     - akita_black_bowl_1_to_robot0_eef_pos
     - plate_1_pos
     - plate_1_to_robot0_eef_pos
+    - init_bowl_pos
   action_dim: 7
   hidden_dims: [256, 256]
-  lr: 1e-3
+  lr: 0.001
   batch_size: 256
-  n_epochs: 100
+  n_epochs: 300
   seed: 42
 
 eval:
