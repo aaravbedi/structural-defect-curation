@@ -21,6 +21,13 @@ from methods.bc_policy import load_policy, obs_to_vec, OBS_KEYS
 
 def run_rollout(env, model, obs_mean, obs_std, horizon=500, device='cpu'):
     obs = env.reset()
+    # Match training-data collection: settle physics for 30 steps with open gripper
+    # before recording obs. Without this the bowl starts at z≈0.97 (floating) rather
+    # than z≈0.90 (on the table), causing wildly out-of-distribution inputs at t=0
+    # and action explosion via BC compounding error.
+    settle = np.zeros(7); settle[-1] = 1.0  # open gripper, no arm motion
+    for _ in range(30):
+        obs, _, _, _ = env.step(settle)
     success = False
     for _ in range(horizon):
         obs_vec = obs_to_vec({k: obs[k] for k in OBS_KEYS})
