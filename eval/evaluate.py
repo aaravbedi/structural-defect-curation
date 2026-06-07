@@ -21,17 +21,35 @@ from methods.bc_policy import load_policy, obs_to_vec, OBS_KEYS
 
 def run_rollout(env, model, obs_mean, obs_std, horizon=500, device='cpu', n_history=1):
     from collections import deque
+    from data.collect_demos import scripted_policy, PHASE_RISE
+
     obs_buf = deque(maxlen=n_history)
 
     obs = env.reset()
-    # Match training-data collection: settle physics for 30 steps with open gripper
-    # before recording obs. Without this the bowl starts at z≈0.97 (floating) rather
-    # than z≈0.90 (on the table), causing wildly out-of-distribution inputs at t=0
-    # and action explosion via BC compounding error.
-    settle = np.zeros(7); settle[-1] = 1.0  # open gripper, no arm motion
+    # Physics settle: let objects come to rest (matches training collection)
+    settle = np.zeros(7); settle[-1] = 1.0
     for _ in range(30):
         obs, _, _, _ = env.step(settle)
 
+    # Snapshot object positions after settle (same as training collection)
+    init_bowl_pos  = obs['akita_black_bowl_1_pos'].copy()
+    init_plate_pos = obs['plate_1_pos'].copy()
+
+    # Scripted RISE warm-start: run the same RISE phase the demos have, so BC
+    # receives its first obs from SAFE_Z height (matching the training start
+    # state) rather than the lower settle position.  Training skips RISE steps
+    # (see SKIP_RISE_STEPS in bc_policy.py), so BC has never seen those actions.
+    phase, phase_step = PHASE_RISE, 0
+    for _ in range(200):
+        if phase != PHASE_RISE:
+            break
+        action, phase, phase_step = scripted_policy(
+            obs, phase, phase_step, init_bowl_pos, init_plate_pos)
+        obs, _, done, _ = env.step(action)
+        if done:
+            return True
+
+    # BC takes over from PREGRASP phase (arm is at SAFE_Z, ready to approach)
     success = False
     for _ in range(horizon):
         obs_vec = obs_to_vec({k: obs[k] for k in OBS_KEYS})

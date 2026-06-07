@@ -27,7 +27,7 @@ train:
   lr: 1e-3
   batch_size: 256
   n_epochs: 300
-  n_history: 2
+  n_history: 1
   seed: 42
 
 eval:

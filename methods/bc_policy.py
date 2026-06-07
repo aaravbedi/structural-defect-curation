@@ -53,14 +53,22 @@ class BCPolicy(nn.Module):
             return self.net(x).squeeze(0).cpu().numpy()
 
 
-def load_dataset(hdf5_path, n_history=1):
-    """Build (obs_input, action) pairs.
+# The scripted policy begins each demo with a pure-vertical RISE phase (~29 steps)
+# to reach SAFE_Z=1.20 before any horizontal approach.  Training BC on this
+# phase is harmful: the tiny dz actions during RISE look superficially similar
+# to stationary states elsewhere in the trajectory, creating a multi-modal
+# distribution that causes BC to massively over-predict dz in rollout (arm
+# flies into ceiling).  We skip these steps and let a scripted RISE warm-start
+# the rollout to the same starting state (see run_rollout in eval/evaluate.py).
+SKIP_RISE_STEPS = 30
 
-    n_history=1 is the original single-frame setup.
-    n_history>1 concatenates the previous n_history-1 obs frames so the
-    policy has velocity context to distinguish task phases (e.g. RISE vs
-    PREGRASP) — critical for avoiding BC covariate-shift on this task.
-    Earlier frames are padded with the first frame when unavailable.
+
+def load_dataset(hdf5_path, n_history=1):
+    """Build (obs_input, action) pairs starting after the scripted RISE phase.
+
+    n_history>1 concatenates the previous n_history-1 obs frames for velocity
+    context (helps distinguish PREGRASP from DESCEND transitions).
+    Earlier frames are padded with the first post-RISE frame.
     """
     import h5py
     observations, actions = [], []
@@ -75,8 +83,10 @@ def load_dataset(hdf5_path, n_history=1):
                 obs_t = {k: obs_grp[k][t] for k in OBS_KEYS}
                 obs_frames.append(obs_to_vec(obs_t))
 
-            for t in range(T):
-                hist = [obs_frames[max(0, t - h)] for h in range(n_history - 1, -1, -1)]
+            start = SKIP_RISE_STEPS
+            for t in range(start, T):
+                # Pad history to the first post-RISE frame (no data from RISE phase)
+                hist = [obs_frames[max(start, t - h)] for h in range(n_history - 1, -1, -1)]
                 observations.append(np.concatenate(hist))
                 actions.append(demo['actions'][t])
 
