@@ -21,7 +21,7 @@ from methods.bc_policy import load_policy, obs_to_vec, OBS_KEYS, phase_to_onehot
 
 def run_rollout(env, model, obs_mean, obs_std, horizon=500, device='cpu', n_history=1):
     from collections import deque
-    from data.collect_demos import scripted_policy, PHASE_RISE
+    from data.collect_demos import scripted_policy, PHASE_RISE, PHASE_PREGRASP
 
     obs_buf = deque(maxlen=n_history)
 
@@ -33,9 +33,21 @@ def run_rollout(env, model, obs_mean, obs_std, horizon=500, device='cpu', n_hist
     init_bowl_pos  = obs['akita_black_bowl_1_pos'].copy()
     init_plate_pos = obs['plate_1_pos'].copy()
 
-    # BC runs the full trajectory from RISE. Phase tracking via scripted_policy
-    # transitions (we use BC's action but track phase separately for conditioning).
+    # Scripted warmup: RISE + PREGRASP. These are pure navigation phases where BC
+    # suffers from covariate shift (too few training frames near xy<0.015). Scripted
+    # policy handles them reliably. BC takes over from DESCEND with phase conditioning.
     phase, phase_step = PHASE_RISE, 0
+    for _ in range(500):
+        if phase not in (PHASE_RISE, PHASE_PREGRASP):
+            break
+        action, phase, phase_step = scripted_policy(
+            obs, phase, phase_step, init_bowl_pos, init_plate_pos)
+        obs, _, done, _ = env.step(action)
+        if done:
+            return True
+
+    # BC takes over from DESCEND. Phase conditioning tells BC which of
+    # DESCEND / GRASP / LIFT / TRANSPORT / LOWER / RELEASE it is in.
     success = False
     for _ in range(horizon):
         obs_base = obs_to_vec({k: obs[k] for k in OBS_KEYS})
@@ -52,7 +64,6 @@ def run_rollout(env, model, obs_mean, obs_std, horizon=500, device='cpu', n_hist
         if done:
             success = True
             break
-        # Advance phase tracker using scripted transitions (ignore returned action)
         _, phase, phase_step = scripted_policy(obs, phase, phase_step, init_bowl_pos, init_plate_pos)
     return success
 

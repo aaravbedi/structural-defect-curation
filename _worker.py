@@ -182,11 +182,23 @@ def task_diag(args):
     init_plate_pos = obs['plate_1_pos'].copy()
     print(f"After settle: eef={obs['robot0_eef_pos'].round(3)}  bowl_z={init_bowl_pos[2]:.3f}")
 
+    PHASE_PREGRASP = 1
     PNAME = {0:'RISE', 1:'PREGRASP', 2:'DESCEND', 3:'GRASP',
              4:'LIFT', 5:'TRANSPORT', 6:'LOWER', 7:'RELEASE', 8:'DONE'}
     obs_buf  = deque(maxlen=n_history)
     phase, phase_step = PHASE_RISE, 0
-    prev_phase = -1
+
+    # Scripted warmup: RISE + PREGRASP (mirrors run_rollout)
+    for _ in range(500):
+        if phase not in (PHASE_RISE, PHASE_PREGRASP):
+            break
+        act, phase, phase_step = scripted_policy(obs, phase, phase_step, init_bowl_pos, init_plate_pos)
+        obs, _, done, _ = env.step(act)
+        if done:
+            print("\n*** SUCCESS (scripted warmup) ***"); env.close(); return
+
+    print(f"Warmup done: phase={PNAME[phase]}, eef_z={obs['robot0_eef_pos'][2]:.3f}", flush=True)
+    prev_phase = phase - 1  # force first transition print
 
     for t in range(500):
         obs_base = obs_to_vec({k: obs[k] for k in OBS_KEYS})
