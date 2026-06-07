@@ -1,60 +1,56 @@
 #!/usr/bin/env python3
 """
-Full 3-step curation pipeline:
-  Step 1 — Clean BC ground truth   (50 demos, gate >=30%)
-  Step 2 — Contamination baselines (80 demos, gate oracle >= clean-15pp)
-  Step 3 — Curation metrics        (6 metrics, AUROC + downstream BC success)
+3-step curation pipeline orchestrator.
+
+Each phase (collect / train / eval) runs in an isolated subprocess via _worker.py
+to avoid MuJoCo/PyTorch memory conflicts on headless systems.
+
+Step 1: Clean BC ground truth   (50 demos, gate >=30%)
+Step 2: Contamination baselines (80 demos, gate oracle >= clean-15pp)
+Step 3: Curation metrics        (6 metrics, AUROC + downstream BC success)
 """
-import sys, os
-sys.path.insert(0, '/home/user/LIBERO')
-sys.path.insert(0, '/home/user/structural-defect-curation')
-os.environ['MUJOCO_GL'] = 'osmesa'
-os.environ['PYOPENGL_PLATFORM'] = 'osmesa'
-
-import gc, tempfile, shutil
+import sys, os, subprocess, json, tempfile, shutil
 import numpy as np
-import yaml
-from sklearn.metrics import roc_auc_score
+import h5py
 
-from data.collect_demos import collect_episode, save_demos
-from methods.bc_policy import train as train_bc, load_policy
-from eval.evaluate import run_rollout
-from methods.curation_metrics import (
-    smoothness, entropy, gripper_timing,
-    IsolationForestScorer, KNNScorer, TrajectoryAlignmentScorer,
-)
+WORKER = os.path.join(os.path.dirname(os.path.abspath(__file__)), '_worker.py')
+PYTHON = sys.executable
 
 
-def build_env(cfg):
-    from libero.libero.benchmark import get_benchmark
-    from libero.libero.envs import OffScreenRenderEnv
-    bm = get_benchmark(cfg['env']['benchmark'])(task_order_index=0)
-    bddl = bm.get_task_bddl_file_path(cfg['env']['task_idx'])
-    return OffScreenRenderEnv(
-        bddl_file_name=bddl,
-        camera_heights=cfg['env']['camera_heights'],
-        camera_widths=cfg['env']['camera_widths'],
-        has_offscreen_renderer=False,
-        use_camera_obs=False,
-    )
+def phase(args_list, label):
+    """Run _worker.py with args, stream output, return parsed RESULT dict."""
+    cmd = [PYTHON, WORKER] + [str(a) for a in args_list]
+    print(f"\n>>> {label}", flush=True)
+    proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                            text=True, bufsize=1)
+    result_json = None
+    for line in proc.stdout:
+        line = line.rstrip('\n')
+        if line.startswith('RESULT:'):
+            result_json = line[7:]
+        else:
+            print(line, flush=True)
+    proc.wait()
+    if proc.returncode != 0:
+        raise RuntimeError(f"Worker failed (exit {proc.returncode}): {label}")
+    return json.loads(result_json) if result_json else {}
 
 
-def eval_policy(env, ckpt, n, device='cpu'):
-    model, obs_mean, obs_std, n_history = load_policy(ckpt, device=device)
-    results = []
-    for i in range(n):
-        s = run_rollout(env, model, obs_mean, obs_std, horizon=500,
-                        device=device, n_history=n_history)
-        results.append(s)
-        print(f"    [{i+1}/{n}] success={s}", flush=True)
-    return results
+def hdf5_subset(src_path, dst_path, indices):
+    """Copy demos at given indices from src_path into a new dst_path."""
+    with h5py.File(src_path, 'r') as src, h5py.File(dst_path, 'w') as dst:
+        for new_i, old_i in enumerate(indices):
+            src.copy(f'demo_{old_i}', dst, name=f'demo_{new_i}')
+
+
+def hdf5_successful_indices(path):
+    """Return indices of demos where attrs['success'] is True."""
+    with h5py.File(path, 'r') as f:
+        return [int(k.split('_')[1]) for k in sorted(f.keys())
+                if f[k].attrs['success']]
 
 
 def main():
-    with open('configs/libero_spatial.yaml') as f:
-        cfg = yaml.safe_load(f)
-    train_cfg = dict(cfg['train'])
-    release_frac = cfg['demo']['release_fraction']
     D = tempfile.mkdtemp(prefix='pipeline_')
     print(f"Working dir: {D}")
 
@@ -65,39 +61,29 @@ def main():
     print("STEP 1: Clean BC ground truth  (50 demos, 500 epochs, 50 rollouts)")
     print("="*62)
 
-    print("\n[1a] Collecting 50 clean demos (seeds 0-49)...")
-    env = build_env(cfg)
-    clean_eps = []
-    for i in range(50):
-        ep = collect_episode(env, inject_defect=False, horizon=500, seed=i)
-        clean_eps.append(ep)
-        print(f"  [{i+1}/50] steps={len(ep[1])}, success={ep[3]}")
-    env.close(); del env; gc.collect()
+    clean_hdf5 = f'{D}/clean.hdf5'
+    clean_ckpt = f'{D}/clean.pt'
 
-    n_clean_suc = sum(e[3] for e in clean_eps)
-    print(f"\nScripted clean success: {n_clean_suc}/50")
+    r = phase(['--task', 'collect', '--n-clean', 50,
+               '--seed-clean-start', 0, '--out', clean_hdf5],
+              "1a: collect 50 clean demos")
+    print(f"\nScripted clean success: {r['n_success']}/{r['n_total']}")
 
-    clean_hdf5 = f'{D}/clean_demos.hdf5'
-    save_demos(clean_hdf5, clean_eps)
+    phase(['--task', 'train', '--data', clean_hdf5,
+           '--ckpt', clean_ckpt, '--n-epochs', 500],
+          "1b: train clean BC (500 epochs)")
 
-    print("\n[1b] Training clean BC (500 epochs)...")
-    clean_ckpt = f'{D}/clean_bc.pt'
-    train_bc(clean_hdf5, clean_ckpt, dict(train_cfg, n_epochs=500, seed=42), device='cpu')
+    r1 = phase(['--task', 'eval', '--ckpt', clean_ckpt, '--n', 50],
+               "1c: evaluate clean BC (50 rollouts)")
+    s1_rate = r1['rate']
 
-    print("\n[1c] Evaluating: 50 rollouts...")
-    env = build_env(cfg)
-    s1_res = eval_policy(env, clean_ckpt, n=50, device='cpu')
-    env.close(); del env; gc.collect()
-
-    s1_rate = np.mean(s1_res)
     print(f"\n{'='*62}")
-    print(f"STEP 1 RESULT: {s1_rate:.0%}  ({sum(s1_res)}/50)")
+    print(f"STEP 1 RESULT: {s1_rate:.0%}  ({r1['n_success']}/50)")
     print(f"{'='*62}")
 
     if s1_rate < 0.30:
         print("GATE FAILED: <30%. Stopping pipeline.")
-        shutil.rmtree(D)
-        return
+        shutil.rmtree(D); return
 
     # ══════════════════════════════════════════════════════════════════
     # STEP 2: Contamination baselines
@@ -106,65 +92,47 @@ def main():
     print("STEP 2: Contamination baselines  (80 demos: 20 clean + 60 defective)")
     print("="*62)
 
-    print("\n[2a] Collecting 80 contaminated demos...")
-    env = build_env(cfg)
-    cont_eps = []
+    cont_hdf5   = f'{D}/cont.hdf5'
+    cont_ckpt   = f'{D}/cont.pt'
+    oracle_hdf5 = f'{D}/oracle.hdf5'
+    oracle_ckpt = f'{D}/oracle.pt'
 
-    for i in range(20):
-        ep = collect_episode(env, inject_defect=False, horizon=500, seed=2000+i)
-        cont_eps.append(ep)
-        print(f"  [{i+1}/80] steps={len(ep[1])}, success={ep[3]}  [clean]")
+    r = phase(['--task', 'collect',
+               '--n-clean', 20, '--seed-clean-start', 2000,
+               '--n-defect', 60, '--seed-defect-start', 1000,
+               '--out', cont_hdf5],
+              "2a: collect 80 contaminated demos")
+    print(f"\nContaminated scripted success: {r['n_success']}/{r['n_total']}")
 
-    for i in range(60):
-        ep = collect_episode(env, inject_defect=True, release_frac=release_frac,
-                             horizon=500, seed=1000+i)
-        cont_eps.append(ep)
-        print(f"  [{20+i+1}/80] steps={len(ep[1])}, success={ep[3]}  [defect]")
+    oracle_idx = hdf5_successful_indices(cont_hdf5)
+    hdf5_subset(cont_hdf5, oracle_hdf5, oracle_idx)
+    print(f"Oracle set: {len(oracle_idx)} successful demos")
 
-    env.close(); del env; gc.collect()
+    phase(['--task', 'train', '--data', cont_hdf5,
+           '--ckpt', cont_ckpt, '--n-epochs', 500],
+          "2b: train contaminated BC (all 80, 500 epochs)")
 
-    cont_hdf5 = f'{D}/cont_demos.hdf5'
-    save_demos(cont_hdf5, cont_eps)
+    phase(['--task', 'train', '--data', oracle_hdf5,
+           '--ckpt', oracle_ckpt, '--n-epochs', 500],
+          f"2c: train oracle BC ({len(oracle_idx)} demos, 500 epochs)")
 
-    oracle_eps = [e for e in cont_eps if e[3]]
-    if len(oracle_eps) == 0:
-        print("GATE FAILED: No successful demos in contaminated set. Stopping.")
-        shutil.rmtree(D)
-        return
-    oracle_hdf5 = f'{D}/oracle_demos.hdf5'
-    save_demos(oracle_hdf5, oracle_eps)
-    print(f"\nOracle set: {len(oracle_eps)} successful demos")
+    r_cont = phase(['--task', 'eval', '--ckpt', cont_ckpt, '--n', 50],
+                   "2d: evaluate contaminated BC (50 rollouts)")
+    r_orc  = phase(['--task', 'eval', '--ckpt', oracle_ckpt, '--n', 50],
+                   "2e: evaluate oracle BC (50 rollouts)")
 
-    print("\n[2b] Training contaminated BC (all 80 demos, 500 epochs)...")
-    cont_ckpt = f'{D}/cont_bc.pt'
-    train_bc(cont_hdf5, cont_ckpt, dict(train_cfg, n_epochs=500, seed=42), device='cpu')
+    cont_rate   = r_cont['rate']
+    oracle_rate = r_orc['rate']
 
-    print(f"\n[2c] Training oracle BC ({len(oracle_eps)} demos, 500 epochs)...")
-    oracle_ckpt = f'{D}/oracle_bc.pt'
-    train_bc(oracle_hdf5, oracle_ckpt, dict(train_cfg, n_epochs=500, seed=42), device='cpu')
-
-    print("\n[2d] Evaluating contaminated BC: 50 rollouts...")
-    env = build_env(cfg)
-    s2_cont = eval_policy(env, cont_ckpt, n=50, device='cpu')
-    env.close(); del env; gc.collect()
-
-    print("\n[2e] Evaluating oracle BC: 50 rollouts...")
-    env = build_env(cfg)
-    s2_oracle = eval_policy(env, oracle_ckpt, n=50, device='cpu')
-    env.close(); del env; gc.collect()
-
-    cont_rate   = np.mean(s2_cont)
-    oracle_rate = np.mean(s2_oracle)
     print(f"\n{'='*62}")
     print(f"STEP 2 RESULTS:")
-    print(f"  Contaminated BC ({len(cont_eps):2d} demos): {cont_rate:.0%}  ({sum(s2_cont)}/50)")
-    print(f"  Oracle BC       ({len(oracle_eps):2d} demos): {oracle_rate:.0%}  ({sum(s2_oracle)}/50)")
+    print(f"  Contaminated BC (80 demos): {cont_rate:.0%}  ({r_cont['n_success']}/50)")
+    print(f"  Oracle BC ({len(oracle_idx):2d} demos):      {oracle_rate:.0%}  ({r_orc['n_success']}/50)")
     print(f"{'='*62}")
 
     if oracle_rate < s1_rate - 0.15:
         print(f"GATE FAILED: Oracle {oracle_rate:.0%} < Clean {s1_rate:.0%} - 15pp. Stopping.")
-        shutil.rmtree(D)
-        return
+        shutil.rmtree(D); return
 
     # ══════════════════════════════════════════════════════════════════
     # STEP 3: Curation metrics
@@ -173,62 +141,43 @@ def main():
     print("STEP 3: Curation metrics  (6 metrics, top-75%=60 demos, 50 rollouts each)")
     print("="*62)
 
-    # Labels: positions 0-19 = clean (1), 20-79 = defective (0)
-    labels    = np.array([1] * 20 + [0] * 60)
-    obs_list  = [e[0] for e in cont_eps]
-    acts_list = [e[1] for e in cont_eps]
+    # Labels: positions 0-19 clean (1), 20-79 defective (0)
+    labels = [1]*20 + [0]*60
 
-    # Fittable metrics fit on Step-1 clean demos (50 clean reference distribution)
-    clean_ref = [(e[0], e[1]) for e in clean_eps]
+    r_sc = phase(['--task', 'score',
+                  '--data', cont_hdf5, '--ref', clean_hdf5,
+                  '--labels', json.dumps(labels)],
+                 "3a: score all 80 contaminated demos with 6 metrics")
 
-    print("\n[3a] Scoring all 80 contaminated demos with 6 metrics...")
-    all_scores = {}
+    all_scores = r_sc['scores']
+    aurocs     = r_sc['aurocs']
 
-    for name, fn in [('smoothness',      smoothness),
-                     ('entropy',         entropy),
-                     ('gripper_timing',  gripper_timing)]:
-        sc = np.array([fn(o, a) for o, a in zip(obs_list, acts_list)])
-        all_scores[name] = sc
-        print(f"  {name:<22}: AUROC={roc_auc_score(labels, sc):.3f}")
-
-    for name, Cls in [('isolation_forest',      IsolationForestScorer),
-                      ('kNN',                   KNNScorer),
-                      ('trajectory_alignment',  TrajectoryAlignmentScorer)]:
-        scorer = Cls()
-        scorer.fit(clean_ref)
-        sc = np.array([scorer.score(o, a) for o, a in zip(obs_list, acts_list)])
-        all_scores[name] = sc
-        print(f"  {name:<22}: AUROC={roc_auc_score(labels, sc):.3f}")
-
-    # Per-metric: keep top-75% (60 of 80), train BC, 50 rollouts
-    print("\n[3b] Per-metric curation BC...")
+    print("\n[3b] Per-metric: select top-75%, train BC, 50 rollouts...")
     top_k = int(0.75 * 80)   # 60
     metric_results = {}
 
     for name, sc in all_scores.items():
-        print(f"\n  [{name}]")
-        top_idx    = np.argsort(sc)[-top_k:]
-        n_clean_in = int(np.sum(top_idx < 20))
-        n_def_in   = top_k - n_clean_in
-        auroc      = roc_auc_score(labels, sc)
-        print(f"    Selected {top_k}: {n_clean_in} clean, {n_def_in} defective  (AUROC={auroc:.3f})")
+        sc_arr  = np.array(sc)
+        top_idx = np.argsort(sc_arr)[-top_k:].tolist()
+        n_clean = sum(1 for i in top_idx if i < 20)
+        n_def   = top_k - n_clean
+        auroc   = aurocs[name]
+        print(f"\n  [{name}]  AUROC={auroc:.3f}  top-{top_k}: {n_clean} clean, {n_def} defective")
 
         sel_hdf5 = f'{D}/{name}_sel.hdf5'
-        save_demos(sel_hdf5, [cont_eps[i] for i in top_idx])
+        sel_ckpt = f'{D}/{name}.pt'
+        hdf5_subset(cont_hdf5, sel_hdf5, top_idx)
 
-        sel_ckpt = f'{D}/{name}_bc.pt'
-        train_bc(sel_hdf5, sel_ckpt, dict(train_cfg, n_epochs=500, seed=42), device='cpu')
+        phase(['--task', 'train', '--data', sel_hdf5,
+               '--ckpt', sel_ckpt, '--n-epochs', 500],
+              f"  train {name} BC")
 
-        print(f"    Running 50 rollouts...")
-        env = build_env(cfg)
-        m_res = eval_policy(env, sel_ckpt, n=50, device='cpu')
-        env.close(); del env; gc.collect()
-
-        m_rate = np.mean(m_res)
+        r_m = phase(['--task', 'eval', '--ckpt', sel_ckpt, '--n', 50],
+                    f"  eval {name} BC (50 rollouts)")
+        m_rate = r_m['rate']
         metric_results[name] = dict(auroc=auroc, success=m_rate,
-                                    vs_cont=m_rate - cont_rate,
-                                    n_clean=n_clean_in)
-        print(f"    => success={m_rate:.0%}  vs_cont={m_rate-cont_rate:+.0%}")
+                                    vs_cont=m_rate - cont_rate, n_clean=n_clean)
+        print(f"  => {name}: success={m_rate:.0%}  vs_cont={m_rate-cont_rate:+.0%}")
 
     # ══════════════════════════════════════════════════════════════════
     # FINAL TABLE
@@ -236,14 +185,15 @@ def main():
     print("\n" + "="*62)
     print("FINAL RESULTS")
     print("="*62)
-    print(f"  Clean BC        (50 demos): {s1_rate:.0%}  ({sum(s1_res)}/50)")
-    print(f"  Contaminated BC (80 demos): {cont_rate:.0%}  ({sum(s2_cont)}/50)")
-    print(f"  Oracle BC       ({len(oracle_eps):2d} demos): {oracle_rate:.0%}  ({sum(s2_oracle)}/50)")
+    print(f"  Clean BC        (50 demos):  {s1_rate:.0%}  ({r1['n_success']}/50)")
+    print(f"  Contaminated BC (80 demos):  {cont_rate:.0%}  ({r_cont['n_success']}/50)")
+    print(f"  Oracle BC ({len(oracle_idx):2d} demos):       {oracle_rate:.0%}  ({r_orc['n_success']}/50)")
     print()
     print(f"  {'Metric':<22} {'AUROC':>6}  {'Success':>8}  {'vs Cont':>8}  {'Clean/60':>9}")
     print(f"  {'-'*22} {'-'*6}  {'-'*8}  {'-'*8}  {'-'*9}")
     for name, r in metric_results.items():
-        print(f"  {name:<22} {r['auroc']:>6.3f}  {r['success']:>8.0%}  {r['vs_cont']:>+8.0%}  {r['n_clean']:>9}/60")
+        print(f"  {name:<22} {r['auroc']:>6.3f}  {r['success']:>8.0%}  "
+              f"{r['vs_cont']:>+8.0%}  {r['n_clean']:>9}/60")
 
     shutil.rmtree(D)
     print("\nPipeline complete.")
