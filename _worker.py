@@ -139,7 +139,7 @@ def task_eval(args):
     results = []
     for i in range(args.n):
         s = run_rollout(env, model, obs_mean, obs_std, horizon=500,
-                        device='cpu', n_history=n_history)
+                        device='cpu', n_history=n_history, seed=i)
         results.append(s)
         print(f"  [{i+1}/{args.n}] success={s}", flush=True)
 
@@ -161,7 +161,8 @@ def task_diag(args):
         cfg = yaml.safe_load(f)
     from libero.libero.benchmark import get_benchmark
     from libero.libero.envs import OffScreenRenderEnv
-    from data.collect_demos import scripted_policy, PHASE_RISE, PHASE_PREGRASP, PHASE_DESCEND, PHASE_GRASP
+    from data.collect_demos import (scripted_policy, PHASE_RISE, PHASE_PREGRASP,
+                                    PHASE_DESCEND, PHASE_GRASP, PHASE_LIFT, PHASE_TRANSPORT)
     from collections import deque
 
     bm = get_benchmark(cfg['env']['benchmark'])(task_order_index=0)
@@ -173,6 +174,7 @@ def task_diag(args):
         has_offscreen_renderer=False, use_camera_obs=False,
     )
 
+    np.random.seed(0)
     obs = env.reset()
     settle = np.zeros(7); settle[-1] = 1.0
     for _ in range(30):
@@ -180,23 +182,24 @@ def task_diag(args):
 
     init_bowl_pos  = obs['akita_black_bowl_1_pos'].copy()
     init_plate_pos = obs['plate_1_pos'].copy()
-    print(f"After settle: eef={obs['robot0_eef_pos'].round(3)}  bowl_z={init_bowl_pos[2]:.3f}")
+    print(f"After settle: eef={obs['robot0_eef_pos'].round(3)}  bowl={init_bowl_pos.round(3)}  plate={init_plate_pos.round(3)}")
 
     PNAME = {0:'RISE', 1:'PREGRASP', 2:'DESCEND', 3:'GRASP',
              4:'LIFT', 5:'TRANSPORT', 6:'LOWER', 7:'RELEASE', 8:'DONE'}
     obs_buf  = deque(maxlen=n_history)
     phase, phase_step = PHASE_RISE, 0
 
-    # Scripted warmup: RISE + PREGRASP + DESCEND + GRASP (mirrors run_rollout)
+    # Scripted warmup through TRANSPORT (mirrors run_rollout)
     for _ in range(500):
-        if phase not in (PHASE_RISE, PHASE_PREGRASP, PHASE_DESCEND, PHASE_GRASP):
+        if phase not in (PHASE_RISE, PHASE_PREGRASP, PHASE_DESCEND,
+                         PHASE_GRASP, PHASE_LIFT, PHASE_TRANSPORT):
             break
         act, phase, phase_step = scripted_policy(obs, phase, phase_step, init_bowl_pos, init_plate_pos)
         obs, _, done, _ = env.step(act)
         if done:
             print("\n*** SUCCESS (scripted warmup) ***"); env.close(); return
 
-    print(f"Warmup done: phase={PNAME[phase]}, eef_z={obs['robot0_eef_pos'][2]:.3f}", flush=True)
+    print(f"Warmup done: phase={PNAME[phase]}, eef=({obs['robot0_eef_pos'][0]:+.3f},{obs['robot0_eef_pos'][1]:+.3f},{obs['robot0_eef_pos'][2]:.3f})", flush=True)
     prev_phase = phase - 1  # force first transition print
 
     for t in range(500):
@@ -211,16 +214,20 @@ def task_diag(args):
 
         eef     = obs['robot0_eef_pos']
         bowl    = obs['akita_black_bowl_1_pos']
+        plate   = obs['plate_1_pos']
         xy_dist = float(np.linalg.norm(eef[:2] - bowl[:2]))
+        plate_err = float(np.linalg.norm(eef[:2] - plate[:2]))
 
         if phase != prev_phase:
             print(f"\n--- phase → {PNAME[phase]} (t={t}) ---", flush=True)
             prev_phase = phase
         if t < 80 or t % 20 == 0:
-            print(f"t={t:3d} {PNAME[phase]:<10} eef_z={eef[2]:.3f} "
-                  f"bowl_z={bowl[2]:.3f} xy={xy_dist:.3f} g={obs['robot0_gripper_qpos'][0]:.2f} "
-                  f"act=[{action[0]:+.3f},{action[1]:+.3f},{action[2]:+.3f},...,"
-                  f"grip={action[-1]:+.3f}]", flush=True)
+            print(f"t={t:3d} {PNAME[phase]:<10} "
+                  f"eef=({eef[0]:+.3f},{eef[1]:+.3f},{eef[2]:.3f}) "
+                  f"plate=({plate[0]:+.3f},{plate[1]:+.3f}) plate_err={plate_err:.3f} "
+                  f"bowl_z={bowl[2]:.3f} g={obs['robot0_gripper_qpos'][0]:.2f} "
+                  f"act=[{action[0]:+.3f},{action[1]:+.3f},{action[2]:+.3f},grip={action[-1]:+.3f}]",
+                  flush=True)
 
         obs, reward, done, _ = env.step(action)
         if done:

@@ -19,12 +19,15 @@ import yaml
 from methods.bc_policy import load_policy, obs_to_vec, OBS_KEYS, phase_to_onehot
 
 
-def run_rollout(env, model, obs_mean, obs_std, horizon=500, device='cpu', n_history=1):
+def run_rollout(env, model, obs_mean, obs_std, horizon=500, device='cpu', n_history=1, seed=None):
     from collections import deque
-    from data.collect_demos import scripted_policy, PHASE_RISE, PHASE_PREGRASP, PHASE_DESCEND, PHASE_GRASP
+    from data.collect_demos import (scripted_policy, PHASE_RISE, PHASE_PREGRASP,
+                                    PHASE_DESCEND, PHASE_GRASP, PHASE_LIFT, PHASE_TRANSPORT)
 
     obs_buf = deque(maxlen=n_history)
 
+    if seed is not None:
+        np.random.seed(seed)
     obs = env.reset()
     settle = np.zeros(7); settle[-1] = 1.0
     for _ in range(30):
@@ -33,14 +36,16 @@ def run_rollout(env, model, obs_mean, obs_std, horizon=500, device='cpu', n_hist
     init_bowl_pos  = obs['akita_black_bowl_1_pos'].copy()
     init_plate_pos = obs['plate_1_pos'].copy()
 
-    # Scripted warmup: RISE + PREGRASP + DESCEND + GRASP.
-    # DESCEND's 50-step timeout fires at z≈0.944, still 3.6cm above grasp height
-    # (bowl_z+0.01). Scripted GRASP corrects the arm down to bowl_z+0.01 and
-    # physically closes the gripper around the bowl. BC takes over at LIFT with
-    # the bowl already grasped — exactly the distribution BC was trained on.
+    # Scripted warmup through TRANSPORT so BC starts at LOWER with the bowl already
+    # above the plate. This eliminates covariate shift in LIFT and TRANSPORT:
+    # BC's orientation after self-generated actions drifts slightly from the scripted
+    # trajectory, causing compounding errors over 40+ LIFT steps and 70+ TRANSPORT steps.
+    # LOWER and RELEASE are simpler behaviors (descend then open gripper) and BC handles
+    # them robustly from the scripted start state.
     phase, phase_step = PHASE_RISE, 0
     for _ in range(500):
-        if phase not in (PHASE_RISE, PHASE_PREGRASP, PHASE_DESCEND, PHASE_GRASP):
+        if phase not in (PHASE_RISE, PHASE_PREGRASP, PHASE_DESCEND,
+                         PHASE_GRASP, PHASE_LIFT, PHASE_TRANSPORT):
             break
         action, phase, phase_step = scripted_policy(
             obs, phase, phase_step, init_bowl_pos, init_plate_pos)
@@ -48,8 +53,8 @@ def run_rollout(env, model, obs_mean, obs_std, horizon=500, device='cpu', n_hist
         if done:
             return True
 
-    # BC takes over from LIFT. Phase conditioning tells BC which of
-    # LIFT / TRANSPORT / LOWER / RELEASE it is in.
+    # BC takes over from LOWER. Phase conditioning tells BC which of
+    # LOWER / RELEASE / DONE it is in.
     success = False
     for _ in range(horizon):
         obs_base = obs_to_vec({k: obs[k] for k in OBS_KEYS})
@@ -93,7 +98,8 @@ def evaluate(policy_path, cfg, device='cpu', label=''):
 
     successes = []
     for i in range(n_rollouts):
-        s = run_rollout(env, model, obs_mean, obs_std, horizon=horizon, device=device, n_history=n_history)
+        s = run_rollout(env, model, obs_mean, obs_std, horizon=horizon, device=device,
+                        n_history=n_history, seed=i)
         successes.append(s)
         print(f"  [{i+1}/{n_rollouts}] success={s}")
 
