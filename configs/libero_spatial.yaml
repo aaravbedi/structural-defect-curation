@@ -28,6 +28,7 @@ train:
   batch_size: 256
   n_epochs: 300
   n_history: 1
+  weight_decay: 1e-4
   seed: 42
 
 eval:

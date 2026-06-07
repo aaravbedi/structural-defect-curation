@@ -40,7 +40,10 @@ class BCPolicy(nn.Module):
         for h in hidden_dims:
             layers += [nn.Linear(in_dim, h), nn.ReLU()]
             in_dim = h
-        layers.append(nn.Linear(in_dim, action_dim))
+        # tanh output keeps predictions in (-1, 1) — prevents unbounded
+        # extrapolation when rollout obs drifts out of training distribution.
+        # All training actions are in [-1, 1] so tanh is a lossless bound.
+        layers += [nn.Linear(in_dim, action_dim), nn.Tanh()]
         self.net = nn.Sequential(*layers)
 
     def forward(self, x):
@@ -116,7 +119,8 @@ def train(hdf5_path, save_path, cfg, device='cpu'):
     in_dim = obs_data.shape[1]
     act_dim = act_data.shape[1]
     model = BCPolicy(in_dim, act_dim, hidden_dims=cfg['hidden_dims']).to(device)
-    optimizer = torch.optim.Adam(model.parameters(), lr=float(cfg['lr']))
+    optimizer = torch.optim.Adam(model.parameters(), lr=float(cfg['lr']),
+                                 weight_decay=float(cfg.get('weight_decay', 1e-4)))
 
     best_loss = float('inf')
     for epoch in range(cfg['n_epochs']):
