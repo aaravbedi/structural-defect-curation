@@ -16,7 +16,7 @@ import yaml
 
 # LIBERO / MuJoCo imports are deferred to function bodies to prevent their
 # OpenGL context from conflicting with PyTorch's allocator on headless systems.
-from methods.bc_policy import load_policy, obs_to_vec, OBS_KEYS
+from methods.bc_policy import load_policy, obs_to_vec, OBS_KEYS, phase_to_onehot
 
 
 def run_rollout(env, model, obs_mean, obs_std, horizon=500, device='cpu', n_history=1):
@@ -26,33 +26,20 @@ def run_rollout(env, model, obs_mean, obs_std, horizon=500, device='cpu', n_hist
     obs_buf = deque(maxlen=n_history)
 
     obs = env.reset()
-    # Physics settle: let objects come to rest (matches training collection)
     settle = np.zeros(7); settle[-1] = 1.0
     for _ in range(30):
         obs, _, _, _ = env.step(settle)
 
-    # Snapshot object positions after settle (same as training collection)
     init_bowl_pos  = obs['akita_black_bowl_1_pos'].copy()
     init_plate_pos = obs['plate_1_pos'].copy()
 
-    # Scripted RISE warm-start: run the same RISE phase the demos have, so BC
-    # receives its first obs from SAFE_Z height (matching the training start
-    # state) rather than the lower settle position.  Training skips RISE steps
-    # (see SKIP_RISE_STEPS in bc_policy.py), so BC has never seen those actions.
+    # BC runs the full trajectory from RISE. Phase tracking via scripted_policy
+    # transitions (we use BC's action but track phase separately for conditioning).
     phase, phase_step = PHASE_RISE, 0
-    for _ in range(200):
-        if phase != PHASE_RISE:
-            break
-        action, phase, phase_step = scripted_policy(
-            obs, phase, phase_step, init_bowl_pos, init_plate_pos)
-        obs, _, done, _ = env.step(action)
-        if done:
-            return True
-
-    # BC takes over from PREGRASP phase (arm is at SAFE_Z, ready to approach)
     success = False
     for _ in range(horizon):
-        obs_vec = obs_to_vec({k: obs[k] for k in OBS_KEYS})
+        obs_base = obs_to_vec({k: obs[k] for k in OBS_KEYS})
+        obs_vec = np.concatenate([obs_base, phase_to_onehot(phase)])
         if len(obs_buf) == 0:
             for _ in range(n_history):
                 obs_buf.append(obs_vec)
@@ -65,6 +52,8 @@ def run_rollout(env, model, obs_mean, obs_std, horizon=500, device='cpu', n_hist
         if done:
             success = True
             break
+        # Advance phase tracker using scripted transitions (ignore returned action)
+        _, phase, phase_step = scripted_policy(obs, phase, phase_step, init_bowl_pos, init_plate_pos)
     return success
 
 

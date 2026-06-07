@@ -19,6 +19,16 @@ OBS_KEYS = [
     'plate_1_to_robot0_eef_pos',
 ]
 
+N_PHASE_GROUPS = 6
+# Maps scripted phase index → behavioral group (9 phases → 6 groups)
+PHASE_TO_GROUP = {0: 0, 1: 1, 2: 2, 3: 2, 4: 3, 5: 4, 6: 4, 7: 5, 8: 5}
+
+
+def phase_to_onehot(p):
+    oh = np.zeros(N_PHASE_GROUPS, dtype=np.float32)
+    oh[PHASE_TO_GROUP.get(int(p), 5)] = 1.0
+    return oh
+
 
 def obs_to_vec(obs_dict):
     """Concatenate selected keys from an obs dict into a flat numpy vector."""
@@ -56,22 +66,15 @@ class BCPolicy(nn.Module):
             return self.net(x).squeeze(0).cpu().numpy()
 
 
-# The scripted policy begins each demo with a pure-vertical RISE phase (~29 steps)
-# to reach SAFE_Z=1.20 before any horizontal approach.  Training BC on this
-# phase is harmful: the tiny dz actions during RISE look superficially similar
-# to stationary states elsewhere in the trajectory, creating a multi-modal
-# distribution that causes BC to massively over-predict dz in rollout (arm
-# flies into ceiling).  We skip these steps and let a scripted RISE warm-start
-# the rollout to the same starting state (see run_rollout in eval/evaluate.py).
-SKIP_RISE_STEPS = 30
+SKIP_RISE_STEPS = 0
 
 
 def load_dataset(hdf5_path, n_history=1):
-    """Build (obs_input, action) pairs starting after the scripted RISE phase.
+    """Build (obs_input, action) pairs with phase one-hot conditioning.
 
-    n_history>1 concatenates the previous n_history-1 obs frames for velocity
-    context (helps distinguish PREGRASP from DESCEND transitions).
-    Earlier frames are padded with the first post-RISE frame.
+    Reads '_phase' from obs group (recorded during collection). Falls back to
+    zeros if missing (legacy datasets without phase recording).
+    n_history>1 concatenates previous frames for velocity context.
     """
     import h5py
     observations, actions = [], []
@@ -81,14 +84,15 @@ def load_dataset(hdf5_path, n_history=1):
             obs_grp = demo['obs']
             T = demo['actions'].shape[0]
 
+            phase_arr = obs_grp['_phase'][:] if '_phase' in obs_grp else np.zeros(T, dtype=np.int32)
+
             obs_frames = []
             for t in range(T):
                 obs_t = {k: obs_grp[k][t] for k in OBS_KEYS}
-                obs_frames.append(obs_to_vec(obs_t))
+                obs_frames.append(np.concatenate([obs_to_vec(obs_t), phase_to_onehot(phase_arr[t])]))
 
             start = SKIP_RISE_STEPS
             for t in range(start, T):
-                # Pad history to the first post-RISE frame (no data from RISE phase)
                 hist = [obs_frames[max(start, t - h)] for h in range(n_history - 1, -1, -1)]
                 observations.append(np.concatenate(hist))
                 actions.append(demo['actions'][t])
