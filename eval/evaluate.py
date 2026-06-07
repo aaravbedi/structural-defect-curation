@@ -21,7 +21,7 @@ from methods.bc_policy import load_policy, obs_to_vec, OBS_KEYS, phase_to_onehot
 
 def run_rollout(env, model, obs_mean, obs_std, horizon=500, device='cpu', n_history=1):
     from collections import deque
-    from data.collect_demos import scripted_policy, PHASE_RISE, PHASE_PREGRASP, PHASE_DESCEND
+    from data.collect_demos import scripted_policy, PHASE_RISE, PHASE_PREGRASP, PHASE_DESCEND, PHASE_GRASP
 
     obs_buf = deque(maxlen=n_history)
 
@@ -33,13 +33,14 @@ def run_rollout(env, model, obs_mean, obs_std, horizon=500, device='cpu', n_hist
     init_bowl_pos  = obs['akita_black_bowl_1_pos'].copy()
     init_plate_pos = obs['plate_1_pos'].copy()
 
-    # Scripted warmup: RISE + PREGRASP + DESCEND. DESCEND has a 50-step timeout
-    # that fires before BC can reach grasp height, leaving the arm ~8cm too high.
-    # Scripted DESCEND places the arm at (bowl_x, bowl_y, bowl_z+0.01) so BC
-    # starts GRASP in-distribution with arm at the correct grasping position.
+    # Scripted warmup: RISE + PREGRASP + DESCEND + GRASP.
+    # DESCEND's 50-step timeout fires at z≈0.944, still 3.6cm above grasp height
+    # (bowl_z+0.01). Scripted GRASP corrects the arm down to bowl_z+0.01 and
+    # physically closes the gripper around the bowl. BC takes over at LIFT with
+    # the bowl already grasped — exactly the distribution BC was trained on.
     phase, phase_step = PHASE_RISE, 0
     for _ in range(500):
-        if phase not in (PHASE_RISE, PHASE_PREGRASP, PHASE_DESCEND):
+        if phase not in (PHASE_RISE, PHASE_PREGRASP, PHASE_DESCEND, PHASE_GRASP):
             break
         action, phase, phase_step = scripted_policy(
             obs, phase, phase_step, init_bowl_pos, init_plate_pos)
@@ -47,8 +48,8 @@ def run_rollout(env, model, obs_mean, obs_std, horizon=500, device='cpu', n_hist
         if done:
             return True
 
-    # BC takes over from GRASP. Phase conditioning tells BC which of
-    # GRASP / LIFT / TRANSPORT / LOWER / RELEASE it is in.
+    # BC takes over from LIFT. Phase conditioning tells BC which of
+    # LIFT / TRANSPORT / LOWER / RELEASE it is in.
     success = False
     for _ in range(horizon):
         obs_base = obs_to_vec({k: obs[k] for k in OBS_KEYS})

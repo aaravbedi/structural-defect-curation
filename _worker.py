@@ -161,7 +161,7 @@ def task_diag(args):
         cfg = yaml.safe_load(f)
     from libero.libero.benchmark import get_benchmark
     from libero.libero.envs import OffScreenRenderEnv
-    from data.collect_demos import scripted_policy, PHASE_RISE, PHASE_PREGRASP, PHASE_DESCEND
+    from data.collect_demos import scripted_policy, PHASE_RISE, PHASE_PREGRASP, PHASE_DESCEND, PHASE_GRASP
     from collections import deque
 
     bm = get_benchmark(cfg['env']['benchmark'])(task_order_index=0)
@@ -187,9 +187,9 @@ def task_diag(args):
     obs_buf  = deque(maxlen=n_history)
     phase, phase_step = PHASE_RISE, 0
 
-    # Scripted warmup: RISE + PREGRASP + DESCEND (mirrors run_rollout)
+    # Scripted warmup: RISE + PREGRASP + DESCEND + GRASP (mirrors run_rollout)
     for _ in range(500):
-        if phase not in (PHASE_RISE, PHASE_PREGRASP, PHASE_DESCEND):
+        if phase not in (PHASE_RISE, PHASE_PREGRASP, PHASE_DESCEND, PHASE_GRASP):
             break
         act, phase, phase_step = scripted_policy(obs, phase, phase_step, init_bowl_pos, init_plate_pos)
         obs, _, done, _ = env.step(act)
@@ -216,9 +216,9 @@ def task_diag(args):
         if phase != prev_phase:
             print(f"\n--- phase → {PNAME[phase]} (t={t}) ---", flush=True)
             prev_phase = phase
-        if t < 60 or t % 20 == 0:
+        if t < 80 or t % 20 == 0:
             print(f"t={t:3d} {PNAME[phase]:<10} eef_z={eef[2]:.3f} "
-                  f"xy={xy_dist:.3f} g={obs['robot0_gripper_qpos'][0]:.2f} "
+                  f"bowl_z={bowl[2]:.3f} xy={xy_dist:.3f} g={obs['robot0_gripper_qpos'][0]:.2f} "
                   f"act=[{action[0]:+.3f},{action[1]:+.3f},{action[2]:+.3f},...,"
                   f"grip={action[-1]:+.3f}]", flush=True)
 
