@@ -161,7 +161,7 @@ def task_diag(args):
         cfg = yaml.safe_load(f)
     from libero.libero.benchmark import get_benchmark
     from libero.libero.envs import OffScreenRenderEnv
-    from data.collect_demos import scripted_policy, PHASE_RISE
+    from data.collect_demos import scripted_policy, PHASE_RISE, PHASE_PREGRASP, PHASE_DESCEND
     from collections import deque
 
     bm = get_benchmark(cfg['env']['benchmark'])(task_order_index=0)
@@ -182,15 +182,14 @@ def task_diag(args):
     init_plate_pos = obs['plate_1_pos'].copy()
     print(f"After settle: eef={obs['robot0_eef_pos'].round(3)}  bowl_z={init_bowl_pos[2]:.3f}")
 
-    PHASE_PREGRASP = 1
     PNAME = {0:'RISE', 1:'PREGRASP', 2:'DESCEND', 3:'GRASP',
              4:'LIFT', 5:'TRANSPORT', 6:'LOWER', 7:'RELEASE', 8:'DONE'}
     obs_buf  = deque(maxlen=n_history)
     phase, phase_step = PHASE_RISE, 0
 
-    # Scripted warmup: RISE + PREGRASP (mirrors run_rollout)
+    # Scripted warmup: RISE + PREGRASP + DESCEND (mirrors run_rollout)
     for _ in range(500):
-        if phase not in (PHASE_RISE, PHASE_PREGRASP):
+        if phase not in (PHASE_RISE, PHASE_PREGRASP, PHASE_DESCEND):
             break
         act, phase, phase_step = scripted_policy(obs, phase, phase_step, init_bowl_pos, init_plate_pos)
         obs, _, done, _ = env.step(act)
