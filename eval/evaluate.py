@@ -7,14 +7,15 @@ import sys, os
 sys.path.insert(0, '/home/user/LIBERO')
 sys.path.insert(0, '/home/user/structural-defect-curation')
 os.environ.setdefault('MUJOCO_GL', 'osmesa')
+os.environ.setdefault('PYOPENGL_PLATFORM', 'osmesa')
 
 import argparse
 import numpy as np
 import torch
 import yaml
 
-from libero.libero.benchmark import get_benchmark
-from libero.libero.envs import OffScreenRenderEnv
+# LIBERO / MuJoCo imports are deferred to function bodies to prevent their
+# OpenGL context from conflicting with PyTorch's allocator on headless systems.
 from methods.bc_policy import load_policy, obs_to_vec, OBS_KEYS
 
 
@@ -33,6 +34,9 @@ def run_rollout(env, model, obs_mean, obs_std, horizon=500, device='cpu'):
 
 
 def evaluate(policy_path, cfg, device='cpu', label=''):
+    from libero.libero.benchmark import get_benchmark
+    from libero.libero.envs import OffScreenRenderEnv
+
     model, obs_mean, obs_std = load_policy(policy_path, device=device)
 
     benchmark_name = cfg['env']['benchmark']

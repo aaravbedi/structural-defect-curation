@@ -7,7 +7,7 @@ env:
 
 demo:
   n_clean: 20
-  n_contaminated: 20
+  n_contaminated: 60
   # structural defect: early gripper release during lift phase
   defect_type: early_release
   # fraction of lift phase at which to release [0.0 = immediately, 1.0 = never]
