@@ -65,6 +65,8 @@ def task_train(args):
         cfg = yaml.safe_load(f)
     train_cfg = dict(cfg['train'])
     train_cfg['n_epochs'] = args.n_epochs
+    if args.seed is not None:
+        train_cfg['seed'] = args.seed
     train_bc(args.data, args.ckpt, train_cfg, device='cpu')
 
 
@@ -244,6 +246,7 @@ if __name__ == '__main__':
     p.add_argument('--seed-defect-start', type=int, default=1000)
     # train
     p.add_argument('--n-epochs', type=int, default=500)
+    p.add_argument('--seed',     type=int, default=None)
     # score
     p.add_argument('--ref',    default=None)
     p.add_argument('--labels', default=None)
