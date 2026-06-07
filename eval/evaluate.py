@@ -49,9 +49,20 @@ def run_rollout(env, model, obs_mean, obs_std, horizon=500, device='cpu', n_hist
             break
         action, phase, phase_step = scripted_policy(
             obs, phase, phase_step, init_bowl_pos, init_plate_pos)
-        obs, _, done, _ = env.step(action)
+        try:
+            obs, _, done, _ = env.step(action)
+        except ValueError:
+            return False  # env terminated unexpectedly (physics / horizon)
         if done:
             return True
+
+    # For seeds where scripted TRANSPORT doesn't converge (xy_err never < XY_TOL),
+    # the warmup exhausts 500 steps and phase stays TRANSPORT. Those seeds are
+    # untestable with this warmup approach — return False rather than letting
+    # BC thrash in TRANSPORT until the env horizon is exceeded.
+    if phase in (PHASE_RISE, PHASE_PREGRASP, PHASE_DESCEND,
+                 PHASE_GRASP, PHASE_LIFT, PHASE_TRANSPORT):
+        return False
 
     # BC takes over from LOWER. Phase conditioning tells BC which of
     # LOWER / RELEASE / DONE it is in.
@@ -67,7 +78,10 @@ def run_rollout(env, model, obs_mean, obs_std, horizon=500, device='cpu', n_hist
         hist_obs = np.concatenate(list(obs_buf))
         obs_norm = (hist_obs - obs_mean) / obs_std
         action = model.predict(obs_norm, device=device)
-        obs, reward, done, _ = env.step(action)
+        try:
+            obs, reward, done, _ = env.step(action)
+        except ValueError:
+            break  # env terminated (horizon / physics edge case)
         if done:
             success = True
             break
