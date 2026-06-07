@@ -26,7 +26,8 @@ train:
   hidden_dims: [256, 256]
   lr: 1e-3
   batch_size: 256
-  n_epochs: 100
+  n_epochs: 300
+  n_history: 2
   seed: 42
 
 eval:

@@ -53,18 +53,33 @@ class BCPolicy(nn.Module):
             return self.net(x).squeeze(0).cpu().numpy()
 
 
-def load_dataset(hdf5_path):
+def load_dataset(hdf5_path, n_history=1):
+    """Build (obs_input, action) pairs.
+
+    n_history=1 is the original single-frame setup.
+    n_history>1 concatenates the previous n_history-1 obs frames so the
+    policy has velocity context to distinguish task phases (e.g. RISE vs
+    PREGRASP) — critical for avoiding BC covariate-shift on this task.
+    Earlier frames are padded with the first frame when unavailable.
+    """
     import h5py
     observations, actions = [], []
     with h5py.File(hdf5_path, 'r') as f:
-        for demo_key in f.keys():
+        for demo_key in sorted(f.keys()):
             demo = f[demo_key]
             obs_grp = demo['obs']
             T = demo['actions'].shape[0]
+
+            obs_frames = []
             for t in range(T):
                 obs_t = {k: obs_grp[k][t] for k in OBS_KEYS}
-                observations.append(obs_to_vec(obs_t))
+                obs_frames.append(obs_to_vec(obs_t))
+
+            for t in range(T):
+                hist = [obs_frames[max(0, t - h)] for h in range(n_history - 1, -1, -1)]
+                observations.append(np.concatenate(hist))
                 actions.append(demo['actions'][t])
+
     return np.array(observations, dtype=np.float32), np.array(actions, dtype=np.float32)
 
 
@@ -73,7 +88,8 @@ def train(hdf5_path, save_path, cfg, device='cpu'):
     torch.manual_seed(seed)
     np.random.seed(seed)
 
-    obs_data, act_data = load_dataset(hdf5_path)
+    n_history = cfg.get('n_history', 1)
+    obs_data, act_data = load_dataset(hdf5_path, n_history=n_history)
     print(f"Dataset: {len(obs_data)} transitions from {hdf5_path}")
 
     # Normalize observations
@@ -116,6 +132,7 @@ def train(hdf5_path, save_path, cfg, device='cpu'):
         'obs_dim': in_dim,
         'act_dim': act_dim,
         'hidden_dims': cfg['hidden_dims'],
+        'n_history': n_history,
     }, save_path)
     print(f"Model saved to {save_path}  (best loss={best_loss:.5f})")
     return model, obs_mean, obs_std
@@ -126,4 +143,5 @@ def load_policy(ckpt_path, device='cpu'):
     model = BCPolicy(ckpt['obs_dim'], ckpt['act_dim'], hidden_dims=ckpt['hidden_dims'])
     model.load_state_dict(ckpt['model_state'])
     model.eval()
-    return model, ckpt['obs_mean'], ckpt['obs_std']
+    n_history = ckpt.get('n_history', 1)
+    return model, ckpt['obs_mean'], ckpt['obs_std'], n_history

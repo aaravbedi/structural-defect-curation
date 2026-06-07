@@ -103,11 +103,11 @@ def train_and_eval(demos, cfg, label='', n_seeds=3):
 
     rates = []
     for seed, ckpt_path in zip(SEEDS[:n_seeds], ckpt_paths):
-        model, obs_mean, obs_std = load_policy(ckpt_path, device='cpu')
+        model, obs_mean, obs_std, n_history = load_policy(ckpt_path, device='cpu')
         successes = []
         for _ in range(N_ROLLOUTS):
             s = run_rollout(env, model, obs_mean, obs_std,
-                            horizon=cfg['eval']['horizon'], device='cpu')
+                            horizon=cfg['eval']['horizon'], device='cpu', n_history=n_history)
             successes.append(s)
         rate = float(np.mean(successes))
         rates.append(rate)
