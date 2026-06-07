@@ -29,7 +29,7 @@ from eval.evaluate import run_rollout
 
 SEEDS = [42, 0, 7]
 N_ROLLOUTS = 20
-TOP_K_FRAC = 0.5  # keep top 50%
+TOP_K_FRAC = 0.75  # keep top 75%
 
 
 # ── data helpers ─────────────────────────────────────────────────────────────
