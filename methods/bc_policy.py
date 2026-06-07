@@ -19,6 +19,29 @@ OBS_KEYS = [
     'plate_1_to_robot0_eef_pos',
 ]
 
+N_PHASE_GROUPS = 7
+# Maps 9 scripted phases → 7 behavioral groups.
+# Critical: DESCEND (go down, gripper open) and GRASP (hold, gripper close) are SEPARATE.
+# Grouping DESCEND+GRASP (the original 6-group design) causes BC to predict averaged
+# gripper actions, keeping the gripper open throughout GRASP.
+PHASE_TO_GROUP = {
+    0: 0,  # RISE
+    1: 1,  # PREGRASP
+    2: 2,  # DESCEND (go down, gripper open)
+    3: 3,  # GRASP   (hold position, close gripper)
+    4: 4,  # LIFT    (go up with bowl, gripper closed)
+    5: 5,  # TRANSPORT (move toward plate, gripper closed)
+    6: 5,  # LOWER     (descend to plate, gripper closed — same group as TRANSPORT)
+    7: 6,  # RELEASE (open gripper)
+    8: 6,  # DONE
+}
+
+
+def phase_to_onehot(p):
+    oh = np.zeros(N_PHASE_GROUPS, dtype=np.float32)
+    oh[PHASE_TO_GROUP.get(int(p), 5)] = 1.0
+    return oh
+
 
 def obs_to_vec(obs_dict):
     """Concatenate selected keys from an obs dict into a flat numpy vector."""
@@ -40,7 +63,10 @@ class BCPolicy(nn.Module):
         for h in hidden_dims:
             layers += [nn.Linear(in_dim, h), nn.ReLU()]
             in_dim = h
-        layers.append(nn.Linear(in_dim, action_dim))
+        # tanh output keeps predictions in (-1, 1) — prevents unbounded
+        # extrapolation when rollout obs drifts out of training distribution.
+        # All training actions are in [-1, 1] so tanh is a lossless bound.
+        layers += [nn.Linear(in_dim, action_dim), nn.Tanh()]
         self.net = nn.Sequential(*layers)
 
     def forward(self, x):
@@ -53,18 +79,37 @@ class BCPolicy(nn.Module):
             return self.net(x).squeeze(0).cpu().numpy()
 
 
-def load_dataset(hdf5_path):
+SKIP_RISE_STEPS = 0
+
+
+def load_dataset(hdf5_path, n_history=1):
+    """Build (obs_input, action) pairs with phase one-hot conditioning.
+
+    Reads '_phase' from obs group (recorded during collection). Falls back to
+    zeros if missing (legacy datasets without phase recording).
+    n_history>1 concatenates previous frames for velocity context.
+    """
     import h5py
     observations, actions = [], []
     with h5py.File(hdf5_path, 'r') as f:
-        for demo_key in f.keys():
+        for demo_key in sorted(f.keys()):
             demo = f[demo_key]
             obs_grp = demo['obs']
             T = demo['actions'].shape[0]
+
+            phase_arr = obs_grp['_phase'][:] if '_phase' in obs_grp else np.zeros(T, dtype=np.int32)
+
+            obs_frames = []
             for t in range(T):
                 obs_t = {k: obs_grp[k][t] for k in OBS_KEYS}
-                observations.append(obs_to_vec(obs_t))
+                obs_frames.append(np.concatenate([obs_to_vec(obs_t), phase_to_onehot(phase_arr[t])]))
+
+            start = SKIP_RISE_STEPS
+            for t in range(start, T):
+                hist = [obs_frames[max(start, t - h)] for h in range(n_history - 1, -1, -1)]
+                observations.append(np.concatenate(hist))
                 actions.append(demo['actions'][t])
+
     return np.array(observations, dtype=np.float32), np.array(actions, dtype=np.float32)
 
 
@@ -73,7 +118,8 @@ def train(hdf5_path, save_path, cfg, device='cpu'):
     torch.manual_seed(seed)
     np.random.seed(seed)
 
-    obs_data, act_data = load_dataset(hdf5_path)
+    n_history = cfg.get('n_history', 1)
+    obs_data, act_data = load_dataset(hdf5_path, n_history=n_history)
     print(f"Dataset: {len(obs_data)} transitions from {hdf5_path}")
 
     # Normalize observations
@@ -90,7 +136,8 @@ def train(hdf5_path, save_path, cfg, device='cpu'):
     in_dim = obs_data.shape[1]
     act_dim = act_data.shape[1]
     model = BCPolicy(in_dim, act_dim, hidden_dims=cfg['hidden_dims']).to(device)
-    optimizer = torch.optim.Adam(model.parameters(), lr=float(cfg['lr']))
+    optimizer = torch.optim.Adam(model.parameters(), lr=float(cfg['lr']),
+                                 weight_decay=float(cfg.get('weight_decay', 1e-4)))
 
     best_loss = float('inf')
     for epoch in range(cfg['n_epochs']):
@@ -116,6 +163,7 @@ def train(hdf5_path, save_path, cfg, device='cpu'):
         'obs_dim': in_dim,
         'act_dim': act_dim,
         'hidden_dims': cfg['hidden_dims'],
+        'n_history': n_history,
     }, save_path)
     print(f"Model saved to {save_path}  (best loss={best_loss:.5f})")
     return model, obs_mean, obs_std
@@ -126,4 +174,5 @@ def load_policy(ckpt_path, device='cpu'):
     model = BCPolicy(ckpt['obs_dim'], ckpt['act_dim'], hidden_dims=ckpt['hidden_dims'])
     model.load_state_dict(ckpt['model_state'])
     model.eval()
-    return model, ckpt['obs_mean'], ckpt['obs_std']
+    n_history = ckpt.get('n_history', 1)
+    return model, ckpt['obs_mean'], ckpt['obs_std'], n_history

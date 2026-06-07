@@ -2,6 +2,17 @@
 Seven demonstration quality metrics for curation of robot learning datasets.
 Each metric takes a demo (obs_seq dict, action_seq array) and returns a scalar
 where higher = better quality.
+
+All metrics truncate demos to TRUNC_T=324 steps before feature extraction to
+remove episode length as a trivial proxy for the defect label.  The early-release
+defect causes contaminated demos to run the full 500-step horizon while clean
+demos finish in ~325 steps; without truncation any length-sensitive feature
+achieves AUROC≈1.0 for free.
+
+The honest AUROC ceiling after truncation is ~0.91: 43/47 defective demos
+release the gripper before step 324 (mean t_release=199), while 4/47 release
+between steps 324–343 and are indistinguishable from clean demos within the
+truncation window.
 """
 
 import numpy as np
@@ -10,7 +21,10 @@ from sklearn.preprocessing import StandardScaler
 from sklearn.neighbors import NearestNeighbors
 
 
-# ── helpers ──────────────────────────────────────────────────────────────────
+# ── constants ─────────────────────────────────────────────────────────────────
+
+# Truncation length = minimum successful episode length (from diagnosis).
+TRUNC_T = 324
 
 OBS_KEYS = [
     'robot0_eef_pos',
@@ -21,6 +35,15 @@ OBS_KEYS = [
     'plate_1_pos',
     'plate_1_to_robot0_eef_pos',
 ]
+
+
+# ── helpers ──────────────────────────────────────────────────────────────────
+
+def truncate_demo(obs_seq, action_seq, T=TRUNC_T):
+    """Clip both sequences to the first T timesteps."""
+    obs_trunc = {k: v[:T] for k, v in obs_seq.items()}
+    act_trunc = action_seq[:T]
+    return obs_trunc, act_trunc
 
 
 def _obs_to_vec(obs_seq_dict):
@@ -68,17 +91,14 @@ def smoothness(obs_seq, action_seq, fs=20.0, fc=10.0, amp_th=0.05, padding_zeros
     """
     Spectral arc length (SPARC) of the action speed profile.
     Higher (less negative) = smoother.
-
-    obs_seq: dict of obs arrays (unused by this metric)
-    action_seq: (T, A) numpy array
     """
+    obs_seq, action_seq = truncate_demo(obs_seq, action_seq)
+
     speed = _action_magnitudes(action_seq)
     T = len(speed)
 
-    # FFT of the speed profile
     N = T + padding_zeros * T
     Mhat = np.abs(np.fft.rfft(speed, n=N)) / T
-    # Normalise by max
     if Mhat.max() < 1e-10:
         return 0.0
     Mhat = Mhat / Mhat.max()
@@ -88,14 +108,12 @@ def smoothness(obs_seq, action_seq, fs=20.0, fc=10.0, amp_th=0.05, padding_zeros
     Mhat_fc = Mhat[idx]
     freqs_fc = freqs[idx]
 
-    # Crop to indices where amplitude is above threshold
     above = np.where(Mhat_fc >= amp_th)[0]
     if len(above) == 0:
         return 0.0
     Mhat_crop = Mhat_fc[: above[-1] + 1]
     freqs_crop = freqs_fc[: above[-1] + 1]
 
-    # Arc length in the normalised frequency-amplitude space
     dM = np.diff(Mhat_crop)
     df = np.diff(freqs_crop / fc)
     arc = -np.sqrt((dM ** 2 + df ** 2)).sum()
@@ -107,20 +125,43 @@ def smoothness(obs_seq, action_seq, fs=20.0, fc=10.0, amp_th=0.05, padding_zeros
 def entropy(obs_seq, action_seq):
     """
     Negative std of the action sequence (averaged over dims).
-    Higher = less variable = more consistent (better quality for scripted data).
+    Higher = less variable = more consistent.
     """
+    obs_seq, action_seq = truncate_demo(obs_seq, action_seq)
     return float(-action_seq.std(axis=0).mean())
 
 
-# ── Metric 3: Length ─────────────────────────────────────────────────────────
+# ── Metric 3: Gripper Timing ──────────────────────────────────────────────────
 
-def length(obs_seq, action_seq):
+def gripper_timing(obs_seq, action_seq):
     """
-    Negative total trajectory length in action space (shorter = better).
+    Length-independent structural-defect detector.
+
+    Returns the normalized timestep at which the gripper first opens
+    (gripper_qpos drops below 0.02 after being above 0.03), divided by
+    TRUNC_T so the score lies in (0, 1].  If the gripper stays closed
+    throughout the truncated window the demo scores 1.0 (best quality).
+    Earlier release = lower score = worse quality.
+
+    This metric directly targets the early-release structural defect without
+    relying on episode length.  Honest AUROC ceiling after truncation: ~0.91
+    (43/47 defects have t_release < TRUNC_T=324; 4/47 release in [324,343]
+    and are undetectable within this window).
     """
-    diffs = np.diff(action_seq, axis=0)
-    traj_len = np.linalg.norm(diffs, axis=1).sum()
-    return float(-traj_len)
+    obs_seq, action_seq = truncate_demo(obs_seq, action_seq)
+
+    if 'robot0_gripper_qpos' not in obs_seq:
+        return 1.0
+
+    gq = obs_seq['robot0_gripper_qpos'][:, 0]  # first finger
+    was_closed = False
+    for t, g in enumerate(gq):
+        if g > 0.03:
+            was_closed = True
+        if was_closed and g < 0.02:
+            return float(t / TRUNC_T)
+
+    return 1.0  # gripper never released within window → clean demo signal
 
 
 # ── Metric 4: Isolation Forest ───────────────────────────────────────────────
@@ -141,33 +182,35 @@ class IsolationForestScorer:
         self._fitted = False
 
     def fit(self, clean_demos):
-        """
-        clean_demos: list of (obs_seq_dict, action_seq) tuples
-        """
-        feats = np.array([_action_summary_features(a) for _, a in clean_demos])
+        """clean_demos: list of (obs_seq_dict, action_seq) tuples"""
+        feats = []
+        for obs_seq, a in clean_demos:
+            obs_seq, a = truncate_demo(obs_seq, a)
+            feats.append(_action_summary_features(a))
+        feats = np.array(feats)
         feats_scaled = self.scaler.fit_transform(feats)
         self.iforest.fit(feats_scaled)
         self._fitted = True
 
     def score(self, obs_seq, action_seq):
         assert self._fitted, "Call fit() first"
+        obs_seq, action_seq = truncate_demo(obs_seq, action_seq)
         feat = _action_summary_features(action_seq).reshape(1, -1)
         feat_scaled = self.scaler.transform(feat)
-        # decision_function: negative anomaly score, higher = more normal
         return float(self.iforest.decision_function(feat_scaled)[0])
 
 
 # ── Metric 5: Ensemble ───────────────────────────────────────────────────────
 
-def ensemble(obs_seq, action_seq, w_smooth=0.5, w_len=0.3, w_ent=0.2):
+def ensemble(obs_seq, action_seq, w_smooth=0.5, w_grip=0.5):
     """
-    Weighted combination of smoothness + length + entropy.
-    Weights chosen to emphasise trajectory quality.
+    Weighted combination of smoothness and gripper_timing.
+    Length term removed after truncation fix — all demos are same length.
     """
+    # truncation is applied inside each sub-metric
     s = smoothness(obs_seq, action_seq)
-    l = length(obs_seq, action_seq)
-    e = entropy(obs_seq, action_seq)
-    return float(w_smooth * s + w_len * l + w_ent * e)
+    g = gripper_timing(obs_seq, action_seq)
+    return float(w_smooth * s + w_grip * g)
 
 
 # ── Metric 6: kNN ────────────────────────────────────────────────────────────
@@ -186,13 +229,18 @@ class KNNScorer:
         self._fitted = False
 
     def fit(self, clean_demos):
-        feats = np.array([_state_action_summary(o, a) for o, a in clean_demos])
+        feats = []
+        for obs_seq, a in clean_demos:
+            obs_seq, a = truncate_demo(obs_seq, a)
+            feats.append(_state_action_summary(obs_seq, a))
+        feats = np.array(feats)
         feats_scaled = self.scaler.fit_transform(feats)
         self.nn.fit(feats_scaled)
         self._fitted = True
 
     def score(self, obs_seq, action_seq):
         assert self._fitted, "Call fit() first"
+        obs_seq, action_seq = truncate_demo(obs_seq, action_seq)
         feat = _state_action_summary(obs_seq, action_seq).reshape(1, -1)
         feat_scaled = self.scaler.transform(feat)
         dists, _ = self.nn.kneighbors(feat_scaled)
@@ -214,6 +262,7 @@ class TrajectoryAlignmentScorer:
     def fit(self, clean_demos):
         all_means = []
         for obs_seq, _ in clean_demos:
+            obs_seq, _ = truncate_demo(obs_seq, np.zeros((1, 7)))
             obs = _obs_to_vec(obs_seq)
             all_means.append(obs.mean(axis=0))
         self.dataset_mean_state = np.mean(all_means, axis=0)
@@ -221,6 +270,7 @@ class TrajectoryAlignmentScorer:
 
     def score(self, obs_seq, action_seq):
         assert self._fitted, "Call fit() first"
+        obs_seq, action_seq = truncate_demo(obs_seq, action_seq)
         obs = _obs_to_vec(obs_seq)
         demo_mean = obs.mean(axis=0)
         ref = self.dataset_mean_state
@@ -236,7 +286,7 @@ class TrajectoryAlignmentScorer:
 STANDALONE_METRICS = {
     'smoothness': smoothness,
     'entropy': entropy,
-    'length': length,
+    'gripper_timing': gripper_timing,
     'ensemble': ensemble,
 }
 

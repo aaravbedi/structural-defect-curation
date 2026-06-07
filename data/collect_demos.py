@@ -162,6 +162,7 @@ def collect_episode(env, inject_defect=False, release_frac=0.3, horizon=500, see
     init_plate_pos = obs['plate_1_pos'].copy()
 
     obs_list = {k: [] for k in OBS_KEYS}
+    obs_list['_phase'] = []
     actions = []
     rewards = []
 
@@ -179,6 +180,7 @@ def collect_episode(env, inject_defect=False, release_frac=0.3, horizon=500, see
         )
         for k in OBS_KEYS:
             obs_list[k].append(obs[k].copy())
+        obs_list['_phase'].append(phase)
         actions.append(action.copy())
 
         obs, reward, done, _ = env.step(action)
