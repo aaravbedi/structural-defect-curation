@@ -19,9 +19,22 @@ OBS_KEYS = [
     'plate_1_to_robot0_eef_pos',
 ]
 
-N_PHASE_GROUPS = 6
-# Maps scripted phase index → behavioral group (9 phases → 6 groups)
-PHASE_TO_GROUP = {0: 0, 1: 1, 2: 2, 3: 2, 4: 3, 5: 4, 6: 4, 7: 5, 8: 5}
+N_PHASE_GROUPS = 7
+# Maps 9 scripted phases → 7 behavioral groups.
+# Critical: DESCEND (go down, gripper open) and GRASP (hold, gripper close) are SEPARATE.
+# Grouping DESCEND+GRASP (the original 6-group design) causes BC to predict averaged
+# gripper actions, keeping the gripper open throughout GRASP.
+PHASE_TO_GROUP = {
+    0: 0,  # RISE
+    1: 1,  # PREGRASP
+    2: 2,  # DESCEND (go down, gripper open)
+    3: 3,  # GRASP   (hold position, close gripper)
+    4: 4,  # LIFT    (go up with bowl, gripper closed)
+    5: 5,  # TRANSPORT (move toward plate, gripper closed)
+    6: 5,  # LOWER     (descend to plate, gripper closed — same group as TRANSPORT)
+    7: 6,  # RELEASE (open gripper)
+    8: 6,  # DONE
+}
 
 
 def phase_to_onehot(p):
