@@ -1,6 +1,7 @@
 {
   "done": [
-    "collect_clean"
+    "collect_clean",
+    "collect_contaminated"
   ],
   "gate_failed": false
 }
