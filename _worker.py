@@ -148,11 +148,83 @@ def task_eval(args):
     print(f"RESULT:{json.dumps({'rate': n_suc / args.n, 'n_success': n_suc, 'n': args.n})}")
 
 
+# ── diag ─────────────────────────────────────────────────────────────────────
+
+def task_diag(args):
+    """One verbose rollout — print phase, arm position, and actions each step."""
+    from methods.bc_policy import load_policy, obs_to_vec, OBS_KEYS, phase_to_onehot
+    from eval.evaluate import run_rollout
+    model, obs_mean, obs_std, n_history = load_policy(args.ckpt, device='cpu')
+    print(f"Model loaded: obs_dim={len(obs_mean)}, n_history={n_history}")
+
+    with open(args.config) as f:
+        cfg = yaml.safe_load(f)
+    from libero.libero.benchmark import get_benchmark
+    from libero.libero.envs import OffScreenRenderEnv
+    from data.collect_demos import scripted_policy, PHASE_RISE
+    from collections import deque
+
+    bm = get_benchmark(cfg['env']['benchmark'])(task_order_index=0)
+    bddl = bm.get_task_bddl_file_path(cfg['env']['task_idx'])
+    env = OffScreenRenderEnv(
+        bddl_file_name=bddl,
+        camera_heights=cfg['env']['camera_heights'],
+        camera_widths=cfg['env']['camera_widths'],
+        has_offscreen_renderer=False, use_camera_obs=False,
+    )
+
+    obs = env.reset()
+    settle = np.zeros(7); settle[-1] = 1.0
+    for _ in range(30):
+        obs, _, _, _ = env.step(settle)
+
+    init_bowl_pos  = obs['akita_black_bowl_1_pos'].copy()
+    init_plate_pos = obs['plate_1_pos'].copy()
+    print(f"After settle: eef={obs['robot0_eef_pos'].round(3)}  bowl_z={init_bowl_pos[2]:.3f}")
+
+    PNAME = {0:'RISE', 1:'PREGRASP', 2:'DESCEND', 3:'GRASP',
+             4:'LIFT', 5:'TRANSPORT', 6:'LOWER', 7:'RELEASE', 8:'DONE'}
+    obs_buf  = deque(maxlen=n_history)
+    phase, phase_step = PHASE_RISE, 0
+    prev_phase = -1
+
+    for t in range(500):
+        obs_base = obs_to_vec({k: obs[k] for k in OBS_KEYS})
+        obs_vec  = np.concatenate([obs_base, phase_to_onehot(phase)])
+        if len(obs_buf) == 0:
+            for _ in range(n_history): obs_buf.append(obs_vec)
+        else:
+            obs_buf.append(obs_vec)
+        obs_norm = (np.concatenate(list(obs_buf)) - obs_mean) / obs_std
+        action = model.predict(obs_norm, device='cpu')
+
+        eef     = obs['robot0_eef_pos']
+        bowl    = obs['akita_black_bowl_1_pos']
+        xy_dist = float(np.linalg.norm(eef[:2] - bowl[:2]))
+
+        if phase != prev_phase:
+            print(f"\n--- phase → {PNAME[phase]} (t={t}) ---", flush=True)
+            prev_phase = phase
+        if t < 60 or t % 20 == 0:
+            print(f"t={t:3d} {PNAME[phase]:<10} eef_z={eef[2]:.3f} "
+                  f"xy={xy_dist:.3f} g={obs['robot0_gripper_qpos'][0]:.2f} "
+                  f"act=[{action[0]:+.3f},{action[1]:+.3f},{action[2]:+.3f},...,"
+                  f"grip={action[-1]:+.3f}]", flush=True)
+
+        obs, reward, done, _ = env.step(action)
+        if done:
+            print(f"\n*** SUCCESS at t={t} ***"); break
+        _, phase, phase_step = scripted_policy(
+            obs, phase, phase_step, init_bowl_pos, init_plate_pos)
+
+    env.close()
+
+
 # ── entry point ───────────────────────────────────────────────────────────────
 
 if __name__ == '__main__':
     p = argparse.ArgumentParser()
-    p.add_argument('--task',   required=True, choices=['collect', 'train', 'score', 'eval'])
+    p.add_argument('--task',   required=True, choices=['collect', 'train', 'score', 'eval', 'diag'])
     p.add_argument('--config', default='configs/libero_spatial.yaml')
     # collect
     p.add_argument('--n-clean',           type=int, default=0)
@@ -176,3 +248,4 @@ if __name__ == '__main__':
     elif args.task == 'train':   task_train(args)
     elif args.task == 'score':   task_score(args)
     elif args.task == 'eval':    task_eval(args)
+    elif args.task == 'diag':    task_diag(args)
