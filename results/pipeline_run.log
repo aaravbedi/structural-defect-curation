@@ -193,3 +193,15 @@ STAGE: oracle
   Model saved to /home/user/structural-defect-curation/results/oracle_s7.pt  (best loss=0.00032)
 
   oracle: launching 3 parallel eval workers (30 rollouts each)...
+    seed=42: 93%
+    seed=0: 93%
+    seed=7: 93%
+  => oracle: 93.3% ± 0.0%
+  [state] marked 'oracle' done
+
+============================================================
+STAGE: metric_smoothness
+============================================================
+  smoothness: AUROC=0.447, top-60: 15 clean / 45 defective
+
+>>>   smoothness train seed=42

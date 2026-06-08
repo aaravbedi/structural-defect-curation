@@ -4,7 +4,8 @@
     "collect_contaminated",
     "step1",
     "score",
-    "cont_baseline"
+    "cont_baseline",
+    "oracle"
   ],
   "gate_failed": false
 }
