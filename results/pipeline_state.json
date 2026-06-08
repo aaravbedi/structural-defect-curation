@@ -10,7 +10,8 @@
     "metric_entropy",
     "metric_gripper_timing",
     "metric_isolation_forest",
-    "metric_ensemble"
+    "metric_ensemble",
+    "metric_kNN"
   ],
   "gate_failed": false
 }

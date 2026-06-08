@@ -607,3 +607,15 @@ STAGE: metric_kNN
   Model saved to /home/user/structural-defect-curation/results/kNN_s7.pt  (best loss=0.00147)
 
   kNN: launching 3 parallel eval workers (30 rollouts each)...
+    seed=42: 0%
+    seed=0: 90%
+    seed=7: 87%
+  => kNN: 58.9% ± 41.7%
+  [state] marked 'metric_kNN' done
+
+============================================================
+STAGE: metric_trajectory_alignment
+============================================================
+  trajectory_alignment: AUROC=0.638, top-60: 16 clean / 44 defective
+
+>>>   trajectory_alignment train seed=42
