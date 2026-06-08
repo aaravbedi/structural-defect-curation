@@ -243,3 +243,4 @@ STAGE: metric_smoothness
   Model saved to /home/user/structural-defect-curation/results/smoothness_s0.pt  (best loss=0.00161)
 
 >>>   smoothness train seed=7
+  Dataset: 28105 transitions from /home/user/structural-defect-curation/results/smoothness_sel.hdf5
