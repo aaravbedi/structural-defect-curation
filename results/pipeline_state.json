@@ -6,7 +6,8 @@
     "score",
     "cont_baseline",
     "oracle",
-    "metric_smoothness"
+    "metric_smoothness",
+    "metric_entropy"
   ],
   "gate_failed": false
 }

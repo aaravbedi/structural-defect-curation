@@ -331,3 +331,15 @@ STAGE: metric_entropy
   Model saved to /home/user/structural-defect-curation/results/entropy_s7.pt  (best loss=0.00139)
 
   entropy: launching 3 parallel eval workers (30 rollouts each)...
+    seed=42: 60%
+    seed=0: 87%
+    seed=7: 87%
+  => entropy: 77.8% ± 12.6%
+  [state] marked 'metric_entropy' done
+
+============================================================
+STAGE: metric_gripper_timing
+============================================================
+  gripper_timing: AUROC=0.804, top-60: 19 clean / 41 defective
+
+>>>   gripper_timing train seed=42
