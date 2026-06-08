@@ -469,3 +469,15 @@ STAGE: metric_isolation_forest
   Model saved to /home/user/structural-defect-curation/results/isolation_forest_s7.pt  (best loss=0.00203)
 
   isolation_forest: launching 3 parallel eval workers (30 rollouts each)...
+    seed=42: 3%
+    seed=0: 3%
+    seed=7: 3%
+  => isolation_forest: 3.3% ± 0.0%
+  [state] marked 'metric_isolation_forest' done
+
+============================================================
+STAGE: metric_ensemble
+============================================================
+  ensemble: AUROC=0.761, top-60: 17 clean / 43 defective
+
+>>>   ensemble train seed=42

@@ -8,7 +8,8 @@
     "oracle",
     "metric_smoothness",
     "metric_entropy",
-    "metric_gripper_timing"
+    "metric_gripper_timing",
+    "metric_isolation_forest"
   ],
   "gate_failed": false
 }
