@@ -397,14 +397,14 @@ def main():
         return
 
     # ── all done ─────────────────────────────────────────────────────────────
-    all_complete = all(s in done for s in ALL_STAGES)
+    all_complete = all(s in state['done'] for s in ALL_STAGES)
     if all_complete:
         print("\n" + "="*60)
         print("ALL STAGES COMPLETE")
         print("="*60)
         print_table()
     else:
-        remaining = [s for s in ALL_STAGES if s not in done]
+        remaining = [s for s in ALL_STAGES if s not in state['done']]
         print(f"\nProgress: {len(done)}/{len(ALL_STAGES)} done. Remaining: {remaining}")
         print("Re-run this script to continue.")
 

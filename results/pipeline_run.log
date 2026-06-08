@@ -676,3 +676,11 @@ STAGE: metric_trajectory_alignment
   Model saved to /home/user/structural-defect-curation/results/trajectory_alignment_s7.pt  (best loss=0.00143)
 
   trajectory_alignment: launching 3 parallel eval workers (30 rollouts each)...
+    seed=42: 90%
+    seed=0: 90%
+    seed=7: 90%
+  => trajectory_alignment: 90.0% ± 0.0%
+  [state] marked 'metric_trajectory_alignment' done
+
+Progress: 2/13 done. Remaining: ['step1', 'score', 'cont_baseline', 'oracle', 'metric_smoothness', 'metric_entropy', 'metric_gripper_timing', 'metric_isolation_forest', 'metric_ensemble', 'metric_kNN', 'metric_trajectory_alignment']
+Re-run this script to continue.

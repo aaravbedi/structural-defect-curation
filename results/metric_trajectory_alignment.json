@@ -1,0 +1,1 @@
+{"mean": 0.9, "std": 0.0, "seed_rates": [0.9, 0.9, 0.9], "auroc": 0.6375000000000001, "vs_baseline": 0.8666666666666667, "n_clean_selected": 16}

@@ -11,7 +11,8 @@
     "metric_gripper_timing",
     "metric_isolation_forest",
     "metric_ensemble",
-    "metric_kNN"
+    "metric_kNN",
+    "metric_trajectory_alignment"
   ],
   "gate_failed": false
 }
