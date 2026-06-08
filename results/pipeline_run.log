@@ -274,3 +274,5 @@ STAGE: metric_entropy
   entropy: AUROC=0.280, top-60: 11 clean / 49 defective
 
 >>>   entropy train seed=42
+  Dataset: 28635 transitions from /home/user/structural-defect-curation/results/entropy_sel.hdf5
+    Epoch 20/300  loss=0.00187
