@@ -5,7 +5,8 @@
     "step1",
     "score",
     "cont_baseline",
-    "oracle"
+    "oracle",
+    "metric_smoothness"
   ],
   "gate_failed": false
 }

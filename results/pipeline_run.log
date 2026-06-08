@@ -262,3 +262,15 @@ STAGE: metric_smoothness
   Model saved to /home/user/structural-defect-curation/results/smoothness_s7.pt  (best loss=0.00202)
 
   smoothness: launching 3 parallel eval workers (30 rollouts each)...
+    seed=42: 83%
+    seed=0: 87%
+    seed=7: 20%
+  => smoothness: 63.3% ± 30.7%
+  [state] marked 'metric_smoothness' done
+
+============================================================
+STAGE: metric_entropy
+============================================================
+  entropy: AUROC=0.280, top-60: 11 clean / 49 defective
+
+>>>   entropy train seed=42
