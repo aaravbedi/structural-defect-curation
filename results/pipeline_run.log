@@ -569,3 +569,22 @@ STAGE: metric_kNN
   Model saved to /home/user/structural-defect-curation/results/kNN_s42.pt  (best loss=0.00149)
 
 >>>   kNN train seed=0
+  Dataset: 27607 transitions from /home/user/structural-defect-curation/results/kNN_sel.hdf5
+    Epoch 20/300  loss=0.00228
+    Epoch 40/300  loss=0.00195
+    Epoch 60/300  loss=0.00190
+    Epoch 80/300  loss=0.00175
+    Epoch 100/300  loss=0.00180
+    Epoch 120/300  loss=0.00167
+    Epoch 140/300  loss=0.00163
+    Epoch 160/300  loss=0.00163
+    Epoch 180/300  loss=0.00158
+    Epoch 200/300  loss=0.00157
+    Epoch 220/300  loss=0.00157
+    Epoch 240/300  loss=0.00152
+    Epoch 260/300  loss=0.00149
+    Epoch 280/300  loss=0.00156
+    Epoch 300/300  loss=0.00152
+  Model saved to /home/user/structural-defect-curation/results/kNN_s0.pt  (best loss=0.00149)
+
+>>>   kNN train seed=7
