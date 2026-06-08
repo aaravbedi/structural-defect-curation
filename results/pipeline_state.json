@@ -1,0 +1,18 @@
+{
+  "done": [
+    "collect_clean",
+    "collect_contaminated",
+    "step1",
+    "score",
+    "cont_baseline",
+    "oracle",
+    "metric_smoothness",
+    "metric_entropy",
+    "metric_gripper_timing",
+    "metric_isolation_forest",
+    "metric_ensemble",
+    "metric_kNN",
+    "metric_trajectory_alignment"
+  ],
+  "gate_failed": false
+}

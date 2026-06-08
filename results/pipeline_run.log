@@ -1,0 +1,686 @@
+Pipeline state: 2/13 stages complete: ['collect_clean', 'collect_contaminated']
+  [state] marked 'collect_clean' done
+  [state] marked 'collect_contaminated' done
+
+============================================================
+STAGE: step1
+============================================================
+
+>>> Step 1: train clean BC (50 demos, 300 epochs)
+  Dataset: 16882 transitions from /home/user/structural-defect-curation/data/raw/clean_demos.hdf5
+    Epoch 20/300  loss=0.00049
+    Epoch 40/300  loss=0.00047
+    Epoch 60/300  loss=0.00043
+    Epoch 80/300  loss=0.00044
+    Epoch 100/300  loss=0.00044
+    Epoch 120/300  loss=0.00045
+    Epoch 140/300  loss=0.00043
+    Epoch 160/300  loss=0.00043
+    Epoch 180/300  loss=0.00042
+    Epoch 200/300  loss=0.00041
+    Epoch 220/300  loss=0.00041
+    Epoch 240/300  loss=0.00040
+    Epoch 260/300  loss=0.00041
+    Epoch 280/300  loss=0.00041
+    Epoch 300/300  loss=0.00041
+  Model saved to /home/user/structural-defect-curation/results/step1_clean.pt  (best loss=0.00039)
+
+>>> Step 1: eval clean BC (10 rollouts)
+  [robosuite WARNING] No private macro file found! (__init__.py:7)
+  [robosuite WARNING] It is recommended to use a private macro file (__init__.py:8)
+  [robosuite WARNING] To setup, run: python /usr/local/lib/python3.11/dist-packages/robosuite/scripts/setup_macros.py (__init__.py:9)
+  Gym has been unmaintained since 2022 and does not support NumPy 2.0 amongst other critical functionality.
+  Please upgrade to Gymnasium, the maintained drop-in replacement of Gym, or contact the authors of your software and request that they upgrade.
+  See the migration guide at https://gymnasium.farama.org/introduction/migration_guide/ for additional information.
+  [info] using task orders [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]
+  [Warning]: datasets path /home/user/LIBERO/libero/libero/../datasets does not exist!
+    [1/10] success=True
+    [2/10] success=True
+    [3/10] success=True
+    [4/10] success=True
+    [5/10] success=True
+    [6/10] success=True
+    [7/10] success=True
+    [8/10] success=True
+    [9/10] success=True
+    [10/10] success=False
+
+  Step 1: 90% (9/10)
+  [state] marked 'step1' done
+
+============================================================
+STAGE: score
+============================================================
+
+>>> Score 80 contaminated demos (6 metrics)
+    smoothness            : AUROC=0.447
+    entropy               : AUROC=0.280
+    gripper_timing        : AUROC=0.804
+    isolation_forest      : AUROC=0.440
+    kNN                   : AUROC=0.712
+    trajectory_alignment  : AUROC=0.638
+  ensemble: AUROC=0.761
+  [state] marked 'score' done
+
+============================================================
+STAGE: cont_baseline
+============================================================
+
+>>>   cont_baseline train seed=42
+  Dataset: 37257 transitions from /home/user/structural-defect-curation/data/raw/contaminated_demos.hdf5
+    Epoch 20/300  loss=0.00245
+    Epoch 40/300  loss=0.00237
+    Epoch 60/300  loss=0.00226
+    Epoch 80/300  loss=0.00223
+    Epoch 100/300  loss=0.00227
+    Epoch 120/300  loss=0.00220
+    Epoch 140/300  loss=0.00223
+    Epoch 160/300  loss=0.00223
+    Epoch 180/300  loss=0.00220
+    Epoch 200/300  loss=0.00217
+    Epoch 220/300  loss=0.00221
+    Epoch 240/300  loss=0.00219
+    Epoch 260/300  loss=0.00219
+    Epoch 280/300  loss=0.00217
+    Epoch 300/300  loss=0.00223
+  Model saved to /home/user/structural-defect-curation/results/cont_baseline_s42.pt  (best loss=0.00215)
+
+>>>   cont_baseline train seed=0
+  Dataset: 37257 transitions from /home/user/structural-defect-curation/data/raw/contaminated_demos.hdf5
+    Epoch 20/300  loss=0.00236
+    Epoch 40/300  loss=0.00227
+    Epoch 60/300  loss=0.00229
+    Epoch 80/300  loss=0.00224
+    Epoch 100/300  loss=0.00236
+    Epoch 120/300  loss=0.00223
+    Epoch 140/300  loss=0.00224
+    Epoch 160/300  loss=0.00221
+    Epoch 180/300  loss=0.00218
+    Epoch 200/300  loss=0.00219
+    Epoch 220/300  loss=0.00217
+    Epoch 240/300  loss=0.00219
+    Epoch 260/300  loss=0.00213
+    Epoch 280/300  loss=0.00217
+    Epoch 300/300  loss=0.00217
+  Model saved to /home/user/structural-defect-curation/results/cont_baseline_s0.pt  (best loss=0.00212)
+
+>>>   cont_baseline train seed=7
+  Dataset: 37257 transitions from /home/user/structural-defect-curation/data/raw/contaminated_demos.hdf5
+    Epoch 20/300  loss=0.00238
+    Epoch 40/300  loss=0.00238
+    Epoch 60/300  loss=0.00228
+    Epoch 80/300  loss=0.00224
+    Epoch 100/300  loss=0.00221
+    Epoch 120/300  loss=0.00226
+    Epoch 140/300  loss=0.00219
+    Epoch 160/300  loss=0.00220
+    Epoch 180/300  loss=0.00219
+    Epoch 200/300  loss=0.00215
+    Epoch 220/300  loss=0.00220
+    Epoch 240/300  loss=0.00219
+    Epoch 260/300  loss=0.00216
+    Epoch 280/300  loss=0.00218
+    Epoch 300/300  loss=0.00216
+  Model saved to /home/user/structural-defect-curation/results/cont_baseline_s7.pt  (best loss=0.00213)
+
+  cont_baseline: launching 3 parallel eval workers (30 rollouts each)...
+    seed=42: 3%
+    seed=0: 3%
+    seed=7: 3%
+  => cont_baseline: 3.3% ± 0.0%
+  [state] marked 'cont_baseline' done
+
+============================================================
+STAGE: oracle
+============================================================
+  Oracle: 16 successful demos selected
+
+>>>   oracle train seed=42
+  Dataset: 5257 transitions from /home/user/structural-defect-curation/results/oracle_demos.hdf5
+    Epoch 20/300  loss=0.00043
+    Epoch 40/300  loss=0.00041
+    Epoch 60/300  loss=0.00037
+    Epoch 80/300  loss=0.00036
+    Epoch 100/300  loss=0.00037
+    Epoch 120/300  loss=0.00036
+    Epoch 140/300  loss=0.00035
+    Epoch 160/300  loss=0.00036
+    Epoch 180/300  loss=0.00040
+    Epoch 200/300  loss=0.00039
+    Epoch 220/300  loss=0.00033
+    Epoch 240/300  loss=0.00033
+    Epoch 260/300  loss=0.00035
+    Epoch 280/300  loss=0.00035
+    Epoch 300/300  loss=0.00034
+  Model saved to /home/user/structural-defect-curation/results/oracle_s42.pt  (best loss=0.00032)
+
+>>>   oracle train seed=0
+  Dataset: 5257 transitions from /home/user/structural-defect-curation/results/oracle_demos.hdf5
+    Epoch 20/300  loss=0.00048
+    Epoch 40/300  loss=0.00038
+    Epoch 60/300  loss=0.00041
+    Epoch 80/300  loss=0.00039
+    Epoch 100/300  loss=0.00035
+    Epoch 120/300  loss=0.00035
+    Epoch 140/300  loss=0.00036
+    Epoch 160/300  loss=0.00034
+    Epoch 180/300  loss=0.00039
+    Epoch 200/300  loss=0.00035
+    Epoch 220/300  loss=0.00035
+    Epoch 240/300  loss=0.00033
+    Epoch 260/300  loss=0.00034
+    Epoch 280/300  loss=0.00033
+    Epoch 300/300  loss=0.00034
+  Model saved to /home/user/structural-defect-curation/results/oracle_s0.pt  (best loss=0.00033)
+
+>>>   oracle train seed=7
+  Dataset: 5257 transitions from /home/user/structural-defect-curation/results/oracle_demos.hdf5
+    Epoch 20/300  loss=0.00045
+    Epoch 40/300  loss=0.00040
+    Epoch 60/300  loss=0.00037
+    Epoch 80/300  loss=0.00037
+    Epoch 100/300  loss=0.00033
+    Epoch 120/300  loss=0.00036
+    Epoch 140/300  loss=0.00034
+    Epoch 160/300  loss=0.00037
+    Epoch 180/300  loss=0.00032
+    Epoch 200/300  loss=0.00034
+    Epoch 220/300  loss=0.00034
+    Epoch 240/300  loss=0.00034
+    Epoch 260/300  loss=0.00036
+    Epoch 280/300  loss=0.00033
+    Epoch 300/300  loss=0.00034
+  Model saved to /home/user/structural-defect-curation/results/oracle_s7.pt  (best loss=0.00032)
+
+  oracle: launching 3 parallel eval workers (30 rollouts each)...
+    seed=42: 93%
+    seed=0: 93%
+    seed=7: 93%
+  => oracle: 93.3% ± 0.0%
+  [state] marked 'oracle' done
+
+============================================================
+STAGE: metric_smoothness
+============================================================
+  smoothness: AUROC=0.447, top-60: 15 clean / 45 defective
+
+>>>   smoothness train seed=42
+  Dataset: 28105 transitions from /home/user/structural-defect-curation/results/smoothness_sel.hdf5
+    Epoch 20/300  loss=0.00232
+    Epoch 40/300  loss=0.00217
+    Epoch 60/300  loss=0.00200
+    Epoch 80/300  loss=0.00196
+    Epoch 100/300  loss=0.00191
+    Epoch 120/300  loss=0.00185
+    Epoch 140/300  loss=0.00181
+    Epoch 160/300  loss=0.00171
+    Epoch 180/300  loss=0.00177
+    Epoch 200/300  loss=0.00175
+    Epoch 220/300  loss=0.00180
+    Epoch 240/300  loss=0.00173
+    Epoch 260/300  loss=0.00173
+    Epoch 280/300  loss=0.00176
+    Epoch 300/300  loss=0.00172
+  Model saved to /home/user/structural-defect-curation/results/smoothness_s42.pt  (best loss=0.00163)
+
+>>>   smoothness train seed=0
+  Dataset: 28105 transitions from /home/user/structural-defect-curation/results/smoothness_sel.hdf5
+    Epoch 20/300  loss=0.00225
+    Epoch 40/300  loss=0.00196
+    Epoch 60/300  loss=0.00188
+    Epoch 80/300  loss=0.00194
+    Epoch 100/300  loss=0.00185
+    Epoch 120/300  loss=0.00176
+    Epoch 140/300  loss=0.00172
+    Epoch 160/300  loss=0.00177
+    Epoch 180/300  loss=0.00174
+    Epoch 200/300  loss=0.00171
+    Epoch 220/300  loss=0.00169
+    Epoch 240/300  loss=0.00167
+    Epoch 260/300  loss=0.00168
+    Epoch 280/300  loss=0.00167
+    Epoch 300/300  loss=0.00167
+  Model saved to /home/user/structural-defect-curation/results/smoothness_s0.pt  (best loss=0.00161)
+
+>>>   smoothness train seed=7
+  Dataset: 28105 transitions from /home/user/structural-defect-curation/results/smoothness_sel.hdf5
+    Epoch 20/300  loss=0.00249
+    Epoch 40/300  loss=0.00238
+    Epoch 60/300  loss=0.00221
+    Epoch 80/300  loss=0.00215
+    Epoch 100/300  loss=0.00210
+    Epoch 120/300  loss=0.00215
+    Epoch 140/300  loss=0.00210
+    Epoch 160/300  loss=0.00215
+    Epoch 180/300  loss=0.00206
+    Epoch 200/300  loss=0.00206
+    Epoch 220/300  loss=0.00203
+    Epoch 240/300  loss=0.00203
+    Epoch 260/300  loss=0.00205
+    Epoch 280/300  loss=0.00208
+    Epoch 300/300  loss=0.00206
+  Model saved to /home/user/structural-defect-curation/results/smoothness_s7.pt  (best loss=0.00202)
+
+  smoothness: launching 3 parallel eval workers (30 rollouts each)...
+    seed=42: 83%
+    seed=0: 87%
+    seed=7: 20%
+  => smoothness: 63.3% ± 30.7%
+  [state] marked 'metric_smoothness' done
+
+============================================================
+STAGE: metric_entropy
+============================================================
+  entropy: AUROC=0.280, top-60: 11 clean / 49 defective
+
+>>>   entropy train seed=42
+  Dataset: 28635 transitions from /home/user/structural-defect-curation/results/entropy_sel.hdf5
+    Epoch 20/300  loss=0.00187
+    Epoch 40/300  loss=0.00177
+    Epoch 60/300  loss=0.00169
+    Epoch 80/300  loss=0.00162
+    Epoch 100/300  loss=0.00156
+    Epoch 120/300  loss=0.00158
+    Epoch 140/300  loss=0.00152
+    Epoch 160/300  loss=0.00151
+    Epoch 180/300  loss=0.00147
+    Epoch 200/300  loss=0.00148
+    Epoch 220/300  loss=0.00150
+    Epoch 240/300  loss=0.00143
+    Epoch 260/300  loss=0.00148
+    Epoch 280/300  loss=0.00145
+    Epoch 300/300  loss=0.00146
+  Model saved to /home/user/structural-defect-curation/results/entropy_s42.pt  (best loss=0.00139)
+
+>>>   entropy train seed=0
+  Dataset: 28635 transitions from /home/user/structural-defect-curation/results/entropy_sel.hdf5
+    Epoch 20/300  loss=0.00192
+    Epoch 40/300  loss=0.00173
+    Epoch 60/300  loss=0.00169
+    Epoch 80/300  loss=0.00158
+    Epoch 100/300  loss=0.00160
+    Epoch 120/300  loss=0.00151
+    Epoch 140/300  loss=0.00149
+    Epoch 160/300  loss=0.00151
+    Epoch 180/300  loss=0.00146
+    Epoch 200/300  loss=0.00149
+    Epoch 220/300  loss=0.00147
+    Epoch 240/300  loss=0.00145
+    Epoch 260/300  loss=0.00148
+    Epoch 280/300  loss=0.00142
+    Epoch 300/300  loss=0.00146
+  Model saved to /home/user/structural-defect-curation/results/entropy_s0.pt  (best loss=0.00138)
+
+>>>   entropy train seed=7
+  Dataset: 28635 transitions from /home/user/structural-defect-curation/results/entropy_sel.hdf5
+    Epoch 20/300  loss=0.00197
+    Epoch 40/300  loss=0.00175
+    Epoch 60/300  loss=0.00163
+    Epoch 80/300  loss=0.00164
+    Epoch 100/300  loss=0.00164
+    Epoch 120/300  loss=0.00152
+    Epoch 140/300  loss=0.00158
+    Epoch 160/300  loss=0.00154
+    Epoch 180/300  loss=0.00150
+    Epoch 200/300  loss=0.00148
+    Epoch 220/300  loss=0.00150
+    Epoch 240/300  loss=0.00148
+    Epoch 260/300  loss=0.00150
+    Epoch 280/300  loss=0.00146
+    Epoch 300/300  loss=0.00140
+  Model saved to /home/user/structural-defect-curation/results/entropy_s7.pt  (best loss=0.00139)
+
+  entropy: launching 3 parallel eval workers (30 rollouts each)...
+    seed=42: 60%
+    seed=0: 87%
+    seed=7: 87%
+  => entropy: 77.8% ± 12.6%
+  [state] marked 'metric_entropy' done
+
+============================================================
+STAGE: metric_gripper_timing
+============================================================
+  gripper_timing: AUROC=0.804, top-60: 19 clean / 41 defective
+
+>>>   gripper_timing train seed=42
+  Dataset: 27429 transitions from /home/user/structural-defect-curation/results/gripper_timing_sel.hdf5
+    Epoch 20/300  loss=0.00261
+    Epoch 40/300  loss=0.00255
+    Epoch 60/300  loss=0.00234
+    Epoch 80/300  loss=0.00232
+    Epoch 100/300  loss=0.00222
+    Epoch 120/300  loss=0.00224
+    Epoch 140/300  loss=0.00227
+    Epoch 160/300  loss=0.00218
+    Epoch 180/300  loss=0.00218
+    Epoch 200/300  loss=0.00217
+    Epoch 220/300  loss=0.00222
+    Epoch 240/300  loss=0.00220
+    Epoch 260/300  loss=0.00224
+    Epoch 280/300  loss=0.00214
+    Epoch 300/300  loss=0.00217
+  Model saved to /home/user/structural-defect-curation/results/gripper_timing_s42.pt  (best loss=0.00210)
+
+>>>   gripper_timing train seed=0
+  Dataset: 27429 transitions from /home/user/structural-defect-curation/results/gripper_timing_sel.hdf5
+    Epoch 20/300  loss=0.00251
+    Epoch 40/300  loss=0.00235
+    Epoch 60/300  loss=0.00238
+    Epoch 80/300  loss=0.00221
+    Epoch 100/300  loss=0.00227
+    Epoch 120/300  loss=0.00219
+    Epoch 140/300  loss=0.00219
+    Epoch 160/300  loss=0.00225
+    Epoch 180/300  loss=0.00221
+    Epoch 200/300  loss=0.00220
+    Epoch 220/300  loss=0.00236
+    Epoch 240/300  loss=0.00212
+    Epoch 260/300  loss=0.00215
+    Epoch 280/300  loss=0.00214
+    Epoch 300/300  loss=0.00215
+  Model saved to /home/user/structural-defect-curation/results/gripper_timing_s0.pt  (best loss=0.00211)
+
+>>>   gripper_timing train seed=7
+  Dataset: 27429 transitions from /home/user/structural-defect-curation/results/gripper_timing_sel.hdf5
+    Epoch 20/300  loss=0.00258
+    Epoch 40/300  loss=0.00240
+    Epoch 60/300  loss=0.00229
+    Epoch 80/300  loss=0.00219
+    Epoch 100/300  loss=0.00223
+    Epoch 120/300  loss=0.00224
+    Epoch 140/300  loss=0.00224
+    Epoch 160/300  loss=0.00221
+    Epoch 180/300  loss=0.00218
+    Epoch 200/300  loss=0.00217
+    Epoch 220/300  loss=0.00221
+    Epoch 240/300  loss=0.00216
+    Epoch 260/300  loss=0.00218
+    Epoch 280/300  loss=0.00213
+    Epoch 300/300  loss=0.00213
+  Model saved to /home/user/structural-defect-curation/results/gripper_timing_s7.pt  (best loss=0.00211)
+
+  gripper_timing: launching 3 parallel eval workers (30 rollouts each)...
+    seed=42: 37%
+    seed=0: 3%
+    seed=7: 0%
+  => gripper_timing: 13.3% ± 16.6%
+  [state] marked 'metric_gripper_timing' done
+
+============================================================
+STAGE: metric_isolation_forest
+============================================================
+  isolation_forest: AUROC=0.440, top-60: 15 clean / 45 defective
+
+>>>   isolation_forest train seed=42
+  Dataset: 28119 transitions from /home/user/structural-defect-curation/results/isolation_forest_sel.hdf5
+    Epoch 20/300  loss=0.00239
+    Epoch 40/300  loss=0.00222
+    Epoch 60/300  loss=0.00220
+    Epoch 80/300  loss=0.00212
+    Epoch 100/300  loss=0.00220
+    Epoch 120/300  loss=0.00203
+    Epoch 140/300  loss=0.00191
+    Epoch 160/300  loss=0.00188
+    Epoch 180/300  loss=0.00179
+    Epoch 200/300  loss=0.00178
+    Epoch 220/300  loss=0.00177
+    Epoch 240/300  loss=0.00175
+    Epoch 260/300  loss=0.00171
+    Epoch 280/300  loss=0.00171
+    Epoch 300/300  loss=0.00170
+  Model saved to /home/user/structural-defect-curation/results/isolation_forest_s42.pt  (best loss=0.00167)
+
+>>>   isolation_forest train seed=0
+  Dataset: 28119 transitions from /home/user/structural-defect-curation/results/isolation_forest_sel.hdf5
+    Epoch 20/300  loss=0.00224
+    Epoch 40/300  loss=0.00209
+    Epoch 60/300  loss=0.00198
+    Epoch 80/300  loss=0.00189
+    Epoch 100/300  loss=0.00190
+    Epoch 120/300  loss=0.00177
+    Epoch 140/300  loss=0.00181
+    Epoch 160/300  loss=0.00180
+    Epoch 180/300  loss=0.00176
+    Epoch 200/300  loss=0.00173
+    Epoch 220/300  loss=0.00177
+    Epoch 240/300  loss=0.00180
+    Epoch 260/300  loss=0.00172
+    Epoch 280/300  loss=0.00173
+    Epoch 300/300  loss=0.00176
+  Model saved to /home/user/structural-defect-curation/results/isolation_forest_s0.pt  (best loss=0.00169)
+
+>>>   isolation_forest train seed=7
+  Dataset: 28119 transitions from /home/user/structural-defect-curation/results/isolation_forest_sel.hdf5
+    Epoch 20/300  loss=0.00248
+    Epoch 40/300  loss=0.00219
+    Epoch 60/300  loss=0.00220
+    Epoch 80/300  loss=0.00219
+    Epoch 100/300  loss=0.00216
+    Epoch 120/300  loss=0.00217
+    Epoch 140/300  loss=0.00210
+    Epoch 160/300  loss=0.00208
+    Epoch 180/300  loss=0.00207
+    Epoch 200/300  loss=0.00213
+    Epoch 220/300  loss=0.00206
+    Epoch 240/300  loss=0.00204
+    Epoch 260/300  loss=0.00205
+    Epoch 280/300  loss=0.00205
+    Epoch 300/300  loss=0.00209
+  Model saved to /home/user/structural-defect-curation/results/isolation_forest_s7.pt  (best loss=0.00203)
+
+  isolation_forest: launching 3 parallel eval workers (30 rollouts each)...
+    seed=42: 3%
+    seed=0: 3%
+    seed=7: 3%
+  => isolation_forest: 3.3% ± 0.0%
+  [state] marked 'metric_isolation_forest' done
+
+============================================================
+STAGE: metric_ensemble
+============================================================
+  ensemble: AUROC=0.761, top-60: 17 clean / 43 defective
+
+>>>   ensemble train seed=42
+  Dataset: 27592 transitions from /home/user/structural-defect-curation/results/ensemble_sel.hdf5
+    Epoch 20/300  loss=0.00238
+    Epoch 40/300  loss=0.00207
+    Epoch 60/300  loss=0.00200
+    Epoch 80/300  loss=0.00190
+    Epoch 100/300  loss=0.00176
+    Epoch 120/300  loss=0.00176
+    Epoch 140/300  loss=0.00174
+    Epoch 160/300  loss=0.00169
+    Epoch 180/300  loss=0.00169
+    Epoch 200/300  loss=0.00170
+    Epoch 220/300  loss=0.00165
+    Epoch 240/300  loss=0.00162
+    Epoch 260/300  loss=0.00165
+    Epoch 280/300  loss=0.00176
+    Epoch 300/300  loss=0.00159
+  Model saved to /home/user/structural-defect-curation/results/ensemble_s42.pt  (best loss=0.00157)
+
+>>>   ensemble train seed=0
+  Dataset: 27592 transitions from /home/user/structural-defect-curation/results/ensemble_sel.hdf5
+    Epoch 20/300  loss=0.00226
+    Epoch 40/300  loss=0.00208
+    Epoch 60/300  loss=0.00193
+    Epoch 80/300  loss=0.00175
+    Epoch 100/300  loss=0.00180
+    Epoch 120/300  loss=0.00174
+    Epoch 140/300  loss=0.00181
+    Epoch 160/300  loss=0.00167
+    Epoch 180/300  loss=0.00180
+    Epoch 200/300  loss=0.00161
+    Epoch 220/300  loss=0.00158
+    Epoch 240/300  loss=0.00165
+    Epoch 260/300  loss=0.00166
+    Epoch 280/300  loss=0.00157
+    Epoch 300/300  loss=0.00164
+  Model saved to /home/user/structural-defect-curation/results/ensemble_s0.pt  (best loss=0.00154)
+
+>>>   ensemble train seed=7
+  Dataset: 27592 transitions from /home/user/structural-defect-curation/results/ensemble_sel.hdf5
+    Epoch 20/300  loss=0.00221
+    Epoch 40/300  loss=0.00211
+    Epoch 60/300  loss=0.00200
+    Epoch 80/300  loss=0.00187
+    Epoch 100/300  loss=0.00173
+    Epoch 120/300  loss=0.00178
+    Epoch 140/300  loss=0.00168
+    Epoch 160/300  loss=0.00169
+    Epoch 180/300  loss=0.00165
+    Epoch 200/300  loss=0.00167
+    Epoch 220/300  loss=0.00166
+    Epoch 240/300  loss=0.00173
+    Epoch 260/300  loss=0.00167
+    Epoch 280/300  loss=0.00164
+    Epoch 300/300  loss=0.00160
+  Model saved to /home/user/structural-defect-curation/results/ensemble_s7.pt  (best loss=0.00155)
+
+  ensemble: launching 3 parallel eval workers (30 rollouts each)...
+    seed=42: 90%
+    seed=0: 93%
+    seed=7: 90%
+  => ensemble: 91.1% ± 1.6%
+  [state] marked 'metric_ensemble' done
+
+============================================================
+STAGE: metric_kNN
+============================================================
+  kNN: AUROC=0.712, top-60: 18 clean / 42 defective
+
+>>>   kNN train seed=42
+  Dataset: 27607 transitions from /home/user/structural-defect-curation/results/kNN_sel.hdf5
+    Epoch 20/300  loss=0.00232
+    Epoch 40/300  loss=0.00208
+    Epoch 60/300  loss=0.00202
+    Epoch 80/300  loss=0.00185
+    Epoch 100/300  loss=0.00182
+    Epoch 120/300  loss=0.00175
+    Epoch 140/300  loss=0.00175
+    Epoch 160/300  loss=0.00166
+    Epoch 180/300  loss=0.00171
+    Epoch 200/300  loss=0.00158
+    Epoch 220/300  loss=0.00165
+    Epoch 240/300  loss=0.00160
+    Epoch 260/300  loss=0.00154
+    Epoch 280/300  loss=0.00150
+    Epoch 300/300  loss=0.00156
+  Model saved to /home/user/structural-defect-curation/results/kNN_s42.pt  (best loss=0.00149)
+
+>>>   kNN train seed=0
+  Dataset: 27607 transitions from /home/user/structural-defect-curation/results/kNN_sel.hdf5
+    Epoch 20/300  loss=0.00228
+    Epoch 40/300  loss=0.00195
+    Epoch 60/300  loss=0.00190
+    Epoch 80/300  loss=0.00175
+    Epoch 100/300  loss=0.00180
+    Epoch 120/300  loss=0.00167
+    Epoch 140/300  loss=0.00163
+    Epoch 160/300  loss=0.00163
+    Epoch 180/300  loss=0.00158
+    Epoch 200/300  loss=0.00157
+    Epoch 220/300  loss=0.00157
+    Epoch 240/300  loss=0.00152
+    Epoch 260/300  loss=0.00149
+    Epoch 280/300  loss=0.00156
+    Epoch 300/300  loss=0.00152
+  Model saved to /home/user/structural-defect-curation/results/kNN_s0.pt  (best loss=0.00149)
+
+>>>   kNN train seed=7
+  Dataset: 27607 transitions from /home/user/structural-defect-curation/results/kNN_sel.hdf5
+    Epoch 20/300  loss=0.00219
+    Epoch 40/300  loss=0.00191
+    Epoch 60/300  loss=0.00181
+    Epoch 80/300  loss=0.00171
+    Epoch 100/300  loss=0.00163
+    Epoch 120/300  loss=0.00163
+    Epoch 140/300  loss=0.00158
+    Epoch 160/300  loss=0.00159
+    Epoch 180/300  loss=0.00159
+    Epoch 200/300  loss=0.00153
+    Epoch 220/300  loss=0.00157
+    Epoch 240/300  loss=0.00154
+    Epoch 260/300  loss=0.00156
+    Epoch 280/300  loss=0.00150
+    Epoch 300/300  loss=0.00153
+  Model saved to /home/user/structural-defect-curation/results/kNN_s7.pt  (best loss=0.00147)
+
+  kNN: launching 3 parallel eval workers (30 rollouts each)...
+    seed=42: 0%
+    seed=0: 90%
+    seed=7: 87%
+  => kNN: 58.9% ± 41.7%
+  [state] marked 'metric_kNN' done
+
+============================================================
+STAGE: metric_trajectory_alignment
+============================================================
+  trajectory_alignment: AUROC=0.638, top-60: 16 clean / 44 defective
+
+>>>   trajectory_alignment train seed=42
+  Dataset: 27951 transitions from /home/user/structural-defect-curation/results/trajectory_alignment_sel.hdf5
+    Epoch 20/300  loss=0.00211
+    Epoch 40/300  loss=0.00198
+    Epoch 60/300  loss=0.00180
+    Epoch 80/300  loss=0.00172
+    Epoch 100/300  loss=0.00173
+    Epoch 120/300  loss=0.00155
+    Epoch 140/300  loss=0.00155
+    Epoch 160/300  loss=0.00152
+    Epoch 180/300  loss=0.00163
+    Epoch 200/300  loss=0.00155
+    Epoch 220/300  loss=0.00149
+    Epoch 240/300  loss=0.00150
+    Epoch 260/300  loss=0.00146
+    Epoch 280/300  loss=0.00146
+    Epoch 300/300  loss=0.00149
+  Model saved to /home/user/structural-defect-curation/results/trajectory_alignment_s42.pt  (best loss=0.00143)
+
+>>>   trajectory_alignment train seed=0
+  Dataset: 27951 transitions from /home/user/structural-defect-curation/results/trajectory_alignment_sel.hdf5
+    Epoch 20/300  loss=0.00217
+    Epoch 40/300  loss=0.00196
+    Epoch 60/300  loss=0.00177
+    Epoch 80/300  loss=0.00169
+    Epoch 100/300  loss=0.00166
+    Epoch 120/300  loss=0.00169
+    Epoch 140/300  loss=0.00158
+    Epoch 160/300  loss=0.00155
+    Epoch 180/300  loss=0.00153
+    Epoch 200/300  loss=0.00152
+    Epoch 220/300  loss=0.00155
+    Epoch 240/300  loss=0.00150
+    Epoch 260/300  loss=0.00154
+    Epoch 280/300  loss=0.00152
+    Epoch 300/300  loss=0.00145
+  Model saved to /home/user/structural-defect-curation/results/trajectory_alignment_s0.pt  (best loss=0.00142)
+
+>>>   trajectory_alignment train seed=7
+  Dataset: 27951 transitions from /home/user/structural-defect-curation/results/trajectory_alignment_sel.hdf5
+    Epoch 20/300  loss=0.00207
+    Epoch 40/300  loss=0.00189
+    Epoch 60/300  loss=0.00173
+    Epoch 80/300  loss=0.00171
+    Epoch 100/300  loss=0.00165
+    Epoch 120/300  loss=0.00164
+    Epoch 140/300  loss=0.00164
+    Epoch 160/300  loss=0.00152
+    Epoch 180/300  loss=0.00154
+    Epoch 200/300  loss=0.00150
+    Epoch 220/300  loss=0.00153
+    Epoch 240/300  loss=0.00150
+    Epoch 260/300  loss=0.00148
+    Epoch 280/300  loss=0.00154
+    Epoch 300/300  loss=0.00153
+  Model saved to /home/user/structural-defect-curation/results/trajectory_alignment_s7.pt  (best loss=0.00143)
+
+  trajectory_alignment: launching 3 parallel eval workers (30 rollouts each)...
+    seed=42: 90%
+    seed=0: 90%
+    seed=7: 90%
+  => trajectory_alignment: 90.0% ± 0.0%
+  [state] marked 'metric_trajectory_alignment' done
+
+Progress: 2/13 done. Remaining: ['step1', 'score', 'cont_baseline', 'oracle', 'metric_smoothness', 'metric_entropy', 'metric_gripper_timing', 'metric_isolation_forest', 'metric_ensemble', 'metric_kNN', 'metric_trajectory_alignment']
+Re-run this script to continue.
