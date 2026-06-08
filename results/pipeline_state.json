@@ -1,7 +1,10 @@
 {
   "done": [
     "collect_clean",
-    "collect_contaminated"
+    "collect_contaminated",
+    "step1",
+    "score",
+    "cont_baseline"
   ],
   "gate_failed": false
 }
