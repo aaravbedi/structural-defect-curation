@@ -400,3 +400,15 @@ STAGE: metric_gripper_timing
   Model saved to /home/user/structural-defect-curation/results/gripper_timing_s7.pt  (best loss=0.00211)
 
   gripper_timing: launching 3 parallel eval workers (30 rollouts each)...
+    seed=42: 37%
+    seed=0: 3%
+    seed=7: 0%
+  => gripper_timing: 13.3% ± 16.6%
+  [state] marked 'metric_gripper_timing' done
+
+============================================================
+STAGE: metric_isolation_forest
+============================================================
+  isolation_forest: AUROC=0.440, top-60: 15 clean / 45 defective
+
+>>>   isolation_forest train seed=42

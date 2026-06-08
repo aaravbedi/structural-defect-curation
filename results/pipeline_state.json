@@ -7,7 +7,8 @@
     "cont_baseline",
     "oracle",
     "metric_smoothness",
-    "metric_entropy"
+    "metric_entropy",
+    "metric_gripper_timing"
   ],
   "gate_failed": false
 }
