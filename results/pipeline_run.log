@@ -538,3 +538,15 @@ STAGE: metric_ensemble
   Model saved to /home/user/structural-defect-curation/results/ensemble_s7.pt  (best loss=0.00155)
 
   ensemble: launching 3 parallel eval workers (30 rollouts each)...
+    seed=42: 90%
+    seed=0: 93%
+    seed=7: 90%
+  => ensemble: 91.1% ± 1.6%
+  [state] marked 'metric_ensemble' done
+
+============================================================
+STAGE: metric_kNN
+============================================================
+  kNN: AUROC=0.712, top-60: 18 clean / 42 defective
+
+>>>   kNN train seed=42

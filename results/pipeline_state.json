@@ -9,7 +9,8 @@
     "metric_smoothness",
     "metric_entropy",
     "metric_gripper_timing",
-    "metric_isolation_forest"
+    "metric_isolation_forest",
+    "metric_ensemble"
   ],
   "gate_failed": false
 }
