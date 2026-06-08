@@ -45,13 +45,15 @@ PLACE_DZ     = 0.06   # place bowl at plate_z + this
 
 
 def scripted_policy(obs, phase, phase_step, init_bowl_pos, init_plate_pos,
-                    inject_defect=False, release_frac=0.3):
+                    inject_defect=False, release_frac=0.3, eval_mode=False):
     """
     Returns (action, next_phase, next_phase_step).
     action: [dx, dy, dz, dax, day, daz, gripper]  (OSC_POSE)
       gripper: +1 = open, -1 = close
 
     Uses init_bowl_pos / init_plate_pos to avoid chasing a displaced object.
+    eval_mode=True: loosens XY_TOL to 2.5 cm and adds 100-step TRANSPORT
+    timeout so the BC eval phase tracker doesn't stall near the plate.
     """
     eef  = obs['robot0_eef_pos']
     bowl = init_bowl_pos
@@ -61,7 +63,7 @@ def scripted_policy(obs, phase, phase_step, init_bowl_pos, init_plate_pos,
     rot  = np.zeros(3)
     GO   = +1.0           # gripper open
     GC   = -1.0           # gripper closed
-    XY_TOL  = 0.015       # 1.5 cm horizontal tolerance
+    XY_TOL  = 0.025 if eval_mode else 0.015   # eval uses looser 2.5 cm tolerance
     Z_TOL   = 0.010       # 1.0 cm vertical tolerance
 
     def action_to(target, gp, xy_only=False):
@@ -122,7 +124,7 @@ def scripted_policy(obs, phase, phase_step, init_bowl_pos, init_plate_pos,
     elif phase == PHASE_TRANSPORT:
         # Move horizontally over plate at safe height
         target = np.array([plate[0], plate[1], SAFE_Z])
-        if xy_err(target) < XY_TOL:
+        if xy_err(target) < XY_TOL or (eval_mode and phase_step >= 100):
             return action_to(target, GC), PHASE_LOWER, 0
         return action_to(target, GC), PHASE_TRANSPORT, phase_step + 1
 

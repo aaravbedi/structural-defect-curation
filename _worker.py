@@ -141,7 +141,7 @@ def task_eval(args):
     results = []
     for i in range(args.n):
         s = run_rollout(env, model, obs_mean, obs_std, horizon=500,
-                        device='cpu', n_history=n_history)
+                        device='cpu', n_history=n_history, seed=i)
         results.append(s)
         print(f"  [{i+1}/{args.n}] success={s}", flush=True)
 

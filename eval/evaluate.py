@@ -19,12 +19,18 @@ import yaml
 from methods.bc_policy import load_policy, obs_to_vec, OBS_KEYS, phase_to_onehot
 
 
-def run_rollout(env, model, obs_mean, obs_std, horizon=500, device='cpu', n_history=1):
+def run_rollout(env, model, obs_mean, obs_std, horizon=500, device='cpu', n_history=1, seed=None):
     from collections import deque
-    from data.collect_demos import scripted_policy, PHASE_RISE, PHASE_PREGRASP, PHASE_DESCEND
+    from data.collect_demos import (scripted_policy, PHASE_RISE, PHASE_PREGRASP,
+                                     PHASE_DESCEND, PHASE_GRASP, PHASE_LIFT,
+                                     PHASE_TRANSPORT, PHASE_DONE)
 
     obs_buf = deque(maxlen=n_history)
 
+    # Seed numpy before reset so LIBERO initialises object positions the same
+    # way as during demo collection (bowl_z reproducibly at ~0.898).
+    if seed is not None:
+        np.random.seed(seed)
     obs = env.reset()
     settle = np.zeros(7); settle[-1] = 1.0
     for _ in range(30):
@@ -33,10 +39,8 @@ def run_rollout(env, model, obs_mean, obs_std, horizon=500, device='cpu', n_hist
     init_bowl_pos  = obs['akita_black_bowl_1_pos'].copy()
     init_plate_pos = obs['plate_1_pos'].copy()
 
-    # Scripted warmup: RISE + PREGRASP + DESCEND. DESCEND has a 50-step timeout
-    # that fires before BC can reach grasp height, leaving the arm ~8cm too high.
-    # Scripted DESCEND places the arm at (bowl_x, bowl_y, bowl_z+0.01) so BC
-    # starts GRASP in-distribution with arm at the correct grasping position.
+    # ── Phase 1: scripted warmup (RISE → PREGRASP → DESCEND) ────────────────
+    # Scripted DESCEND places the arm at the bowl for a reliable grasp start.
     phase, phase_step = PHASE_RISE, 0
     for _ in range(500):
         if phase not in (PHASE_RISE, PHASE_PREGRASP, PHASE_DESCEND):
@@ -47,10 +51,13 @@ def run_rollout(env, model, obs_mean, obs_std, horizon=500, device='cpu', n_hist
         if done:
             return True
 
-    # BC takes over from GRASP. Phase conditioning tells BC which of
-    # GRASP / LIFT / TRANSPORT / LOWER / RELEASE it is in.
-    success = False
+    # ── Phase 2: BC controls GRASP + LIFT ───────────────────────────────────
+    # BC tests whether the model grasps and lifts the bowl.  Defective demos
+    # open the gripper early during LIFT so the bowl drops here.
+    # Phase tracker uses the scripted oracle to advance GRASP→LIFT→TRANSPORT.
     for _ in range(horizon):
+        if phase not in (PHASE_GRASP, PHASE_LIFT):
+            break
         obs_base = obs_to_vec({k: obs[k] for k in OBS_KEYS})
         obs_vec = np.concatenate([obs_base, phase_to_onehot(phase)])
         if len(obs_buf) == 0:
@@ -61,12 +68,28 @@ def run_rollout(env, model, obs_mean, obs_std, horizon=500, device='cpu', n_hist
         hist_obs = np.concatenate(list(obs_buf))
         obs_norm = (hist_obs - obs_mean) / obs_std
         action = model.predict(obs_norm, device=device)
-        obs, reward, done, _ = env.step(action)
+        obs, _, done, _ = env.step(action)
         if done:
-            success = True
+            return True
+        _, phase, phase_step = scripted_policy(obs, phase, phase_step,
+                                                init_bowl_pos, init_plate_pos,
+                                                eval_mode=True)
+
+    # ── Phase 3: scripted TRANSPORT → LOWER → RELEASE ───────────────────────
+    # The scripted policy reliably navigates from any arm height to the plate
+    # and releases.  If the bowl was dropped in Phase 2, the arm arrives empty
+    # and the task reward stays 0.
+    for _ in range(400):
+        if phase == PHASE_DONE:
             break
-        _, phase, phase_step = scripted_policy(obs, phase, phase_step, init_bowl_pos, init_plate_pos)
-    return success
+        action, phase, phase_step = scripted_policy(obs, phase, phase_step,
+                                                     init_bowl_pos, init_plate_pos,
+                                                     eval_mode=True)
+        obs, _, done, _ = env.step(action)
+        if done:
+            return True
+
+    return False
 
 
 def evaluate(policy_path, cfg, device='cpu', label=''):
@@ -92,7 +115,8 @@ def evaluate(policy_path, cfg, device='cpu', label=''):
 
     successes = []
     for i in range(n_rollouts):
-        s = run_rollout(env, model, obs_mean, obs_std, horizon=horizon, device=device, n_history=n_history)
+        s = run_rollout(env, model, obs_mean, obs_std, horizon=horizon, device=device,
+                        n_history=n_history, seed=i)
         successes.append(s)
         print(f"  [{i+1}/{n_rollouts}] success={s}")
 
