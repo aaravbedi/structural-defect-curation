@@ -205,3 +205,5 @@ STAGE: metric_smoothness
   smoothness: AUROC=0.447, top-60: 15 clean / 45 defective
 
 >>>   smoothness train seed=42
+  Dataset: 28105 transitions from /home/user/structural-defect-curation/results/smoothness_sel.hdf5
+    Epoch 20/300  loss=0.00232
