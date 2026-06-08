@@ -276,3 +276,20 @@ STAGE: metric_entropy
 >>>   entropy train seed=42
   Dataset: 28635 transitions from /home/user/structural-defect-curation/results/entropy_sel.hdf5
     Epoch 20/300  loss=0.00187
+    Epoch 40/300  loss=0.00177
+    Epoch 60/300  loss=0.00169
+    Epoch 80/300  loss=0.00162
+    Epoch 100/300  loss=0.00156
+    Epoch 120/300  loss=0.00158
+    Epoch 140/300  loss=0.00152
+    Epoch 160/300  loss=0.00151
+    Epoch 180/300  loss=0.00147
+    Epoch 200/300  loss=0.00148
+    Epoch 220/300  loss=0.00150
+    Epoch 240/300  loss=0.00143
+    Epoch 260/300  loss=0.00148
+    Epoch 280/300  loss=0.00145
+    Epoch 300/300  loss=0.00146
+  Model saved to /home/user/structural-defect-curation/results/entropy_s42.pt  (best loss=0.00139)
+
+>>>   entropy train seed=0
