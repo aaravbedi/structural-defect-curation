@@ -312,3 +312,4 @@ STAGE: metric_entropy
   Model saved to /home/user/structural-defect-curation/results/entropy_s0.pt  (best loss=0.00138)
 
 >>>   entropy train seed=7
+  Dataset: 28635 transitions from /home/user/structural-defect-curation/results/entropy_sel.hdf5
