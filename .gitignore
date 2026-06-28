@@ -1,5 +1,9 @@
 data/raw/
 results/*.pt
+results/sweep/pools/
+results/sweep/datasets/
+results/sweep/ckpts/
+sweep.log
 __pycache__/
 *.pyc
 .pytest_cache/
