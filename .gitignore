@@ -3,6 +3,9 @@ results/*.pt
 results/sweep/pools/
 results/sweep/datasets/
 results/sweep/ckpts/
+results/sweep/smoke_*
+results/sweep/sweep_state.json
+results/sweep/*.log
 sweep.log
 __pycache__/
 *.pyc
