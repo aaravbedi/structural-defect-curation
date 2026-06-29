@@ -84,3 +84,12 @@ if [ -n "${CLAUDE_ENV_FILE:-}" ]; then
 fi
 
 echo "[session-start] All dependencies installed successfully."
+
+# ── Auto-resume the contamination-boundary sweep ──────────────────────────────
+# The container is ephemeral; whenever it restarts this hook fires, so resume the
+# long sweep here if it isn't finished. Idempotent (won't double-launch).
+SWEEP_DAEMON="$CLAUDE_PROJECT_DIR/run_sweep_daemon.sh"
+if [ -f "$SWEEP_DAEMON" ]; then
+  echo "[session-start] Ensuring contamination-boundary sweep is running..."
+  bash "$SWEEP_DAEMON" || true
+fi
