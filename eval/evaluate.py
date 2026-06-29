@@ -4,8 +4,8 @@ Reports task success rate over N rollouts.
 """
 
 import sys, os
-sys.path.insert(0, '/home/user/LIBERO')
-sys.path.insert(0, '/home/user/structural-defect-curation')
+sys.path.insert(0, os.environ.get('LIBERO_PATH', '/home/user/LIBERO'))
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 os.environ.setdefault('MUJOCO_GL', 'osmesa')
 os.environ.setdefault('PYOPENGL_PLATFORM', 'osmesa')
 

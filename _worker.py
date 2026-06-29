@@ -9,8 +9,8 @@ Tasks:
   eval     --ckpt PATH --n N
 """
 import sys, os, argparse, json
-sys.path.insert(0, '/home/user/LIBERO')
-sys.path.insert(0, '/home/user/structural-defect-curation')
+sys.path.insert(0, os.environ.get('LIBERO_PATH', '/home/user/LIBERO'))
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 os.environ['MUJOCO_GL'] = 'osmesa'
 os.environ['PYOPENGL_PLATFORM'] = 'osmesa'
 
