@@ -11,8 +11,10 @@ Tasks:
 import sys, os, argparse, json
 sys.path.insert(0, os.environ.get('LIBERO_PATH', '/home/user/LIBERO'))
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-os.environ['MUJOCO_GL'] = 'osmesa'
-os.environ['PYOPENGL_PLATFORM'] = 'osmesa'
+# Default to OSMesa for headless Linux, but respect an already-set MUJOCO_GL
+# (e.g. macOS sets 'glfw' via run_local.sh — forcing 'osmesa' there is invalid).
+os.environ.setdefault('MUJOCO_GL', 'osmesa')
+os.environ.setdefault('PYOPENGL_PLATFORM', 'osmesa')
 
 import numpy as np
 import yaml
