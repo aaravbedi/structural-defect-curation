@@ -191,7 +191,11 @@ def collect_episode(env, inject_defect=False, release_frac=0.3, horizon=500, see
         phase = next_phase
         phase_step = next_step
 
-        if done:
+        # Use the ACTUAL LIBERO task outcome, not `done`. `done` also fires on
+        # horizon timeout, which mislabels dropped-bowl defective demos (that run
+        # the full 500 steps without placing the bowl) as success=True. The real
+        # signal is env.check_success() (equivalently reward >= 1.0 for this task).
+        if env.check_success():
             success = True
             break
 
